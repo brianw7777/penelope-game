@@ -9,13 +9,13 @@
 body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;font-family:'Courier New',monospace}
 #g{background:#000;width:100%;max-width:1280px;margin:0 auto;border:2px solid #0000AA;box-sizing:border-box;}
 canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pixelated}
-#msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:6px 10px;min-height:56px;color:#55FFFF;font:13px/1.6 'Courier New',monospace}
+#msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:8px 12px;min-height:96px;color:#55FFFF;font:15px/1.6 'Courier New',monospace}
 #bot{background:#000044;display:flex;align-items:stretch;border-top:1px solid #5555FF;flex-wrap:wrap}
-.vb{background:transparent;color:#AAAAAA;border:none;border-right:1px solid #334;padding:7px 11px;font:11px 'Courier New',monospace;text-transform:uppercase;letter-spacing:1px;cursor:pointer}
+.vb{background:transparent;color:#AAAAAA;border:none;border-right:1px solid #334;padding:24px 8px;font:21px 'Courier New',monospace;text-transform:uppercase;letter-spacing:0px;cursor:pointer}
 .vb.on{color:#FFFF55;background:#000088}.vb:hover:not(.on){color:#fff}
 #sep{width:1px;background:#5555FF}
-#inv{flex:1;display:flex;align-items:center;gap:6px;padding:0 10px;overflow-x:auto}
-.ii{background:#000077;border:1px solid #5555FF;padding:2px 6px;cursor:pointer;white-space:nowrap;color:#FFFF55;font:10px 'Courier New',monospace}.ii:hover{background:#000099}
+#inv{flex:1;display:flex;align-items:flex-start;align-content:flex-start;flex-wrap:wrap;gap:6px;padding:4px 10px;overflow-x:hidden;overflow-y:auto;max-height:180px}
+.ii{background:#000077;border:1px solid #5555FF;padding:6px 10px;cursor:pointer;white-space:nowrap;color:#FFFF55;font:13px 'Courier New',monospace}.ii:hover{background:#000099}.ii-sel{background:#005500;border-color:#55FF55;color:#AAFFAA}
 </style>
 </head>
 <body>
@@ -28,21 +28,21 @@ canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pix
 <button class="vb" data-v="open">Open</button>
 <button class="vb" data-v="use">Use</button>
 <button class="vb" data-v="take">Take</button>
-<button class="vb" data-v="push">Push</button>
 <div id="sep"></div>
-<div id="inv"></div>
+<div id="inv" style="flex:1;min-width:0;"></div>
 </div>
 </div>
 <script>
 const cv=document.getElementById('c'),ct=cv.getContext('2d');
 
-// Resize canvas pixel buffer to match display size
+// Resize canvas pixel buffer to match display size — smooth continuous scaling
 function resizeCanvas(){
   const w=cv.parentElement.clientWidth||640;
-  const scale=w<=640?1:w<=960?1.5:2;
-  const pw=Math.round(640*scale),ph=Math.round(400*scale);
-  if(cv.width!==pw){cv.width=pw;cv.height=ph;}
-  cv.style.height=cv.offsetWidth*(400/640)+"px";
+  // Scale fluidly: 320 game units fills container, min 1x, max 4x
+  const scale=Math.min(4,Math.max(1,w/320));
+  const pw=Math.round(320*scale),ph=Math.round(200*scale);
+  if(cv.width!==pw||cv.height!==ph){cv.width=pw;cv.height=ph;}
+  cv.style.height=Math.round(pw*(200/320))+"px";
 }
 window.addEventListener("resize",resizeCanvas);
 window.addEventListener("orientationchange",function(){setTimeout(resizeCanvas,100);});
@@ -83,7 +83,7 @@ const G={
   pen:{x:65,y:148,tx:65,ty:148,walking:false,frame:0,ft:0,dir:'right'},
   hov:null,pendingAction:null,pendingUseItem:null,
   crateL:0,crateR:0,crateMoving:false,
-  waitClick:false,waitMsg:'',waitFn:null,
+  waitClick:false,waitMsg:'',waitFn:null,invPopupLabel:'',
   roseX:65,roseY:155,// Rose follows Penelope with lag
   hatchCloseProg:0,hatchClosing:false,
   seated:false,
@@ -95,32 +95,36 @@ const G={
 // Inventory
 function updInv(){
   const el=document.getElementById('inv');
-  if(!G.inv.length){el.innerHTML='<span style="color:#555577;font:10px monospace">empty</span>';return;}
-  el.innerHTML=G.inv.map(i=>`<span class="ii" onclick="ci('${i}')">${i}</span>`).join('');
+  const label='<span style="color:#fff;font:bold 13px \'Courier New\',monospace;padding:6px 4px 0 0;white-space:nowrap;align-self:flex-start;">Inventory:</span>';
+  if(!G.inv.length){el.innerHTML=label+'<span style="color:#555577;font:10px monospace;padding-top:8px">empty</span>';return;}
+  el.innerHTML=label+G.inv.map(i=>`<span class="ii${G.pendingUseItem===i?' ii-sel':''}" onclick="ci('${i}')">${i}</span>`).join('');
 }
 function ci(item){
   S.ui();
+  // If an item is already selected with USE, clicking another inv item = use first on second
+  if(G.pendingUseItem&&G.pendingUseItem!==item){
+    const src=G.pendingUseItem;G.pendingUseItem=null;updInv();
+    msg('You try using the '+src+' on the '+item+'. Nothing useful happens.');S.err();
+    return;
+  }
   if(G.verb==='use'){
-    G.pendingUseItem=item;
+    G.pendingUseItem=item;updInv();
     if(item==='key')msg("Key selected — now click the hatch to unlock it!");
     else if(item==='lollipop')msg("You wave the lollipop around. Nothing seems interested.");
     else if(item==='rose'){S.rose();G.pendingUseItem='rose';msg("Rose is selected and ready to help. She is probably not going to help. Click something to try.");}
     return;
   }
-  G.pendingUseItem=null;
-  if(item==='lollipop'){if(G.verb==='look'){G.invPopup='lollipop';msg("Cherry lollipop. Very red. Slightly pocket-fuzzy. Still delicious. (Click to close)");}else{msg("Cherry lollipop. Slightly pocket-fuzzy. Still delicious.");}}
-  else if(item==='rose'){
-    if(G.verb==='look'||G.verb==='use'&&!G.pendingUseItem){
-      G.roseClicks++;
-      if(G.roseClicks>=10){G.roseClicks=0;G.slimeTimer=10;S.stm();msg("Rose makes a TERRIBLE face and squirts sea slime at you. 'GIVE ME A MOMENT.' You are now slimy.");}
-      else{S.rose();G.invPopup='rose';msg("Rose the tiny landhorse coos softly. She is your dear pet. She has tiny hooves and enormous eyes. Everything will be okay. (Click to close)");}
-    }else{
-      G.roseClicks++;
-      if(G.roseClicks>=10){G.roseClicks=0;G.slimeTimer=10;S.stm();msg("Rose squirts sea slime at you. 'GIVE ME A MOMENT.'");}
-      else{S.rose();msg("Rose coos thoughtfully. She has no idea what you want but is on board.");}
-    }
+  // All non-use verbs behave like look — show popup/description
+  G.pendingUseItem=null;updInv();
+  if(item==='lollipop'){
+    G.invPopup='lollipop';msg("Cherry lollipop. Very red. Slightly pocket-fuzzy. Still delicious. (Click to close)");
+  }else if(item==='rose'){
+    G.roseClicks++;
+    if(G.roseClicks>=10){G.roseClicks=0;G.slimeTimer=10;S.stm();msg("Rose makes a TERRIBLE face and squirts sea slime at you. 'GIVE ME A MOMENT.' You are now slimy.");}
+    else{S.rose();G.invPopup='rose';msg("Rose the tiny landhorse coos softly. She is your dear pet. She has tiny hooves and enormous eyes. Everything will be okay. (Click to close)");}
+  }else if(item==='key'){
+    G.invPopup='key';msg("The hexagonal hatch key. Tagged 'MAINT. HATCH — BAY C-7'. (Click to close)");
   }
-  else if(item==='key'){if(G.verb==='look'){G.invPopup='key';msg("The hexagonal hatch key. Tagged 'MAINT. HATCH — BAY C-7'. (Click to close)");}else{msg("The hexagonal hatch key. Tagged 'MAINT. HATCH — BAY C-7'.");}}
 }
 updInv();
 
@@ -142,8 +146,8 @@ const SP={
 bay:[
   {id:'win',n:'the viewing window',x:19,y:19,w:148,h:34,wx:90,wy:148,
    look:"Stars stream past at warp 2. Beautiful and terrifying.",
-   push:()=>{G.windowPushes++;if(G.windowPushes>=10&&!G.easterEggUnlocked){G.easterEggUnlocked=true;S.chrp();G.eyeAnim=0;G.room='eyes';setTimeout(()=>{G.room='bay';},7000);return"The glass fogs up from your breath... then clears to show your own wide eye staring back. Spooky. The window shudders. Something just unlocked.";}return["You press your nose to the cold glass. Your breath fogs it up.","You're still breathing on it. It's very fogged.","You've made a nose-print. Impressive.",][G.windowPushes%3];},
-   use:"You stare into space dramatically. Very heroic.",take:"Can't take the window."},
+   use:()=>{G.windowPushes++;if(G.windowPushes>=10&&!G.easterEggUnlocked){G.easterEggUnlocked=true;S.chrp();G.eyeAnim=0;G.room='eyes';setTimeout(()=>{G.room='bay';},7000);return"The glass fogs up from your breath... then clears to show your own wide eye staring back. Spooky. The window shudders. Something just unlocked.";}return["You press your nose to the cold glass. Your breath fogs it up.","You're still breathing on it. It's very fogged.","You've made a nose-print. Impressive.",][G.windowPushes%3];},
+   take:"Can't take the window."},
   {id:'shuttle',n:'colony shuttle ARGO-7',x:183,y:90,w:135,h:38,wx:182,wy:155,
    look:"A Type-7 Colony Shuttle. Smells like engine oil and cold fries.",take:"Won't fit in your pocket.",
    use:()=>doUseObj('shuttle'),
@@ -444,7 +448,7 @@ function drawBay(){
     f(C.dg,106,121,Math.round(30*p),18);f(C.dg,166-Math.round(30*p),121,Math.round(30*p),18);
   }
   // Status bar
-  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('SHUTTLE BAY — COLONY SHIP ARGO',55,8,C.wh,11);tx('v0.10',274,8,C.lg,11);
+  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('SHUTTLE BAY — COLONY SHIP ARGO',55,8,C.wh,11);tx('v0.20',274,8,C.lg,11);
 }
 
 // Pod scene
@@ -524,7 +528,7 @@ function drawPod(){
     f(C.sl,262,51,44,4);f(C.sl,262,51,4,44);f(C.sl,302,51,4,44);
     f(C.am,271,53,12,8);tx('BAY',263,87,C.cy,8);
   }
-  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('ESCAPE POD Mk.7B',90,8,C.wh,11);tx('v0.10',274,8,C.lg,11);
+  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('ESCAPE POD Mk.7B',90,8,C.wh,11);tx('v0.20',274,8,C.lg,11);
 }
 
 // Cutscene scenes
@@ -1047,7 +1051,7 @@ function doInt(sp,v){
   if(!r){const d={look:`You look at ${sp.n}. Nothing unusual.`,open:"You can't open that.",use:"You can't use that now.",take:"You can't take that.",push:"Nothing happens."};r=d[v];}
   if(typeof r==='function'){const res=r();if(res)msg(res);}else if(r)msg(r);
 }
-const PV=['open','use','push','take'];
+const PV=['open','use','take'];
 
 // Game loop
 function drawIntro(){
@@ -1085,7 +1089,14 @@ function drawInvPopup(item){
   ct.fillStyle='rgba(0,0,0,0.55)';ct.fillRect(0,0,320,200);
   f(C.nv2,bx,by,bw,bh);f(C.sl,bx,by,bw,2);f(C.sl,bx,by,2,bh);f(C.sl,bx+bw-2,by,2,bh);f(C.sl,bx,by+bh-2,bw,2);
   f(C.nv,bx+2,by+2,bw-4,12);
-  if(item==='lollipop'){
+  if(item==='dummy'){
+    const label=G.invPopupLabel||'item';
+    tx(label.toUpperCase(),bx+10,by+11,C.yw,7);
+    f(C.dg,bx+10,by+20,bw-20,bh-40);
+    f(C.mg,bx+14,by+24,bw-28,bh-52);
+    f(C.lg,bx+20,by+30,20,20);f(C.lg,bx+50,by+40,15,15);f(C.lg,bx+35,by+55,18,12);
+    tx('(clothing item)',bx+10,by+bh-12,C.cy,5);
+  }else if(item==='lollipop'){
     tx('LOLLIPOP',bx+22,by+11,C.yw,8);
     // Stick — thin cream line, game coords
     f(C.cr,bx+58,by+57,2,28);
@@ -1305,10 +1316,10 @@ cv.addEventListener('click',e=>{
   if(G.pendingUseItem&&sp){
     // Using inventory item on a hotspot
     if(G.pendingUseItem==='key'&&sp.id==='hatch'){
-      G.pendingUseItem=null;
+      G.pendingUseItem=null;updInv();
       doHatch(true);
     }else{
-      const item=G.pendingUseItem;G.pendingUseItem=null;
+      const item=G.pendingUseItem;G.pendingUseItem=null;updInv();
       if(item==='rose'){
         S.rose();
         const rq={win:"Rose peers through the viewing window and coos at the stars. This does not help.",shuttle:"Rose trots up to the shuttle and sniffs it. The shuttle is unimpressed. Rose is unimpressed. A standoff.",panel:"Rose taps the panel with a tiny hoof. Three new alarms start beeping. Rose looks very pleased.",sign:"Rose looks at the AUTHORIZED PERSONNEL ONLY sign. Then looks at you. Then looks back at the sign. Then coos.",crates:"Rose squeezes behind the crates and disappears for a moment. Then pops back out. She found nothing useful, but had a great time.",hatch:"Rose is not helpful with locks. She is very small and her hooves are not shaped for wheel-handles.",hdoor:"Rose headbutts the sealed hatch gently. It does not open. Rose seems satisfied anyway.",port:"Rose presses her tiny nose against the porthole. She coos at the stars for a very long time.",chair:"Rose tries to climb into the acceleration chair. She does not fit. She is a landhorse, not a launch-horse.",btn:"Rose stares at the blinking button. She stares for a LONG time. Then looks at you with enormous eyes. You both know what has to happen.",cp:"Rose trots across the control panel. Six new error messages appear. Three things start beeping. Rose is chaos incarnate."};
@@ -1346,7 +1357,7 @@ cv.addEventListener('click',e=>{
   }
 });
 document.querySelectorAll('.vb').forEach(b=>{
-  b.addEventListener('click',()=>{document.querySelectorAll('.vb').forEach(x=>x.classList.remove('on'));b.classList.add('on');G.verb=b.dataset.v;G.pendingUseItem=null;S.clk();});
+  b.addEventListener('click',()=>{document.querySelectorAll('.vb').forEach(x=>x.classList.remove('on'));b.classList.add('on');G.verb=b.dataset.v;G.pendingUseItem=null;updInv();S.clk();});
 });
 requestAnimationFrame(ts=>{lastT=ts;loop(ts);});
 </script>
