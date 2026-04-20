@@ -2,14 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Penelope & The Escape Pod — A Game by Finn & Dad</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{background:#000;overflow-x:hidden;}
 body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;font-family:'Courier New',monospace}
-#g{background:#000;width:100%;max-width:640px;margin:0 auto;border:2px solid #0000AA;box-sizing:border-box;}
-canvas{display:block;width:100%;cursor:crosshair;image-rendering:pixelated}
+#g{background:#000;width:640px;border:2px solid #0000AA}
+canvas{display:block;width:640px;height:400px;cursor:crosshair;image-rendering:pixelated}
 #msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:6px 10px;min-height:56px;color:#55FFFF;font:13px/1.6 'Courier New',monospace}
 #bot{background:#000044;display:flex;align-items:stretch;border-top:1px solid #5555FF;flex-wrap:wrap}
 .vb{background:transparent;color:#AAAAAA;border:none;border-right:1px solid #334;padding:7px 11px;font:11px 'Courier New',monospace;text-transform:uppercase;letter-spacing:1px;cursor:pointer}
@@ -1255,16 +1253,7 @@ function loop(ts){
   else if(G.invPopup)drawInvPopup(G.invPopup);
   // Intro narrative
   if(G.showIntro)drawIntro();
-  
-function resizeCanvas(){
-  const w=cv.offsetWidth;
-  cv.style.height=Math.round(w*400/640)+'px';
-}
-window.addEventListener('resize',resizeCanvas);
-window.addEventListener('orientationchange',function(){setTimeout(resizeCanvas,100);});
-resizeCanvas();
-
-requestAnimationFrame(loop);
+  requestAnimationFrame(loop);
 }
 
 // Events
