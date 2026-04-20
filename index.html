@@ -6,7 +6,7 @@
 <title>Penelope & The Escape Pod — A Game by Finn & Dad</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;font-family:'Courier New',monospace}
+body{background:#111;display:flex;justify-content:center;align-items:flex-start;height:100vh;overflow:hidden;padding:20px;font-family:'Courier New',monospace;box-sizing:border-box;}
 #g{background:#000;width:100%;max-width:1280px;margin:0 auto;border:2px solid #0000AA;box-sizing:border-box;}
 canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pixelated}
 #msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:8px 12px;min-height:96px;color:#55FFFF;font:15px/1.6 'Courier New',monospace}
@@ -37,12 +37,23 @@ const cv=document.getElementById('c'),ct=cv.getContext('2d');
 
 // Resize canvas pixel buffer to match display size — smooth continuous scaling
 function resizeCanvas(){
-  const w=cv.parentElement.clientWidth||640;
-  // Scale fluidly: 320 game units fills container, min 1x, max 4x
-  const scale=Math.min(4,Math.max(1,w/320));
+  const g=document.getElementById('g');
+  // Temporarily remove fixed width so g can report its natural fluid width
+  g.style.width='';
+  const w=g.clientWidth||640;
+  // Measure UI below canvas (msg + bot bars)
+  const uiH=document.getElementById('msg').offsetHeight
+           +document.getElementById('bot').offsetHeight;
+  const bodyPad=40;
+  const availH=window.innerHeight-uiH-bodyPad;
+  const scaleW=Math.min(4,Math.max(1,w/320));
+  const scaleH=Math.max(1,availH/200);
+  const scale=Math.min(scaleW,scaleH);
   const pw=Math.round(320*scale),ph=Math.round(200*scale);
   if(cv.width!==pw||cv.height!==ph){cv.width=pw;cv.height=ph;}
-  cv.style.height=Math.round(pw*(200/320))+"px";
+  cv.style.width=pw+'px';
+  cv.style.height=ph+'px';
+  g.style.width=pw+'px';
 }
 window.addEventListener("resize",resizeCanvas);
 window.addEventListener("orientationchange",function(){setTimeout(resizeCanvas,100);});
