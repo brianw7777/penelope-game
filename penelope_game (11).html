@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Penelope & The Escape Pod — A Game by Finn & Dad</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;font-family:'Courier New',monospace}
+#g{background:#000;width:640px;border:2px solid #0000AA}
+canvas{display:block;width:640px;height:400px;cursor:crosshair;image-rendering:pixelated}
+#msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:6px 10px;min-height:56px;color:#55FFFF;font:13px/1.6 'Courier New',monospace}
+#bot{background:#000044;display:flex;align-items:stretch;border-top:1px solid #5555FF;flex-wrap:wrap}
+.vb{background:transparent;color:#AAAAAA;border:none;border-right:1px solid #334;padding:7px 11px;font:11px 'Courier New',monospace;text-transform:uppercase;letter-spacing:1px;cursor:pointer}
+.vb.on{color:#FFFF55;background:#000088}.vb:hover:not(.on){color:#fff}
+#sep{width:1px;background:#5555FF}
+#inv{flex:1;display:flex;align-items:center;gap:6px;padding:0 10px;overflow-x:auto}
+.ii{background:#000077;border:1px solid #5555FF;padding:2px 6px;cursor:pointer;white-space:nowrap;color:#FFFF55;font:10px 'Courier New',monospace}.ii:hover{background:#000099}
+</style>
+</head>
+<body>
+<div id="g">
+<canvas id="c" width="640" height="400"></canvas>
+<div id="msg">Penelope crept through the shuttle bay door. The AUTHORIZED PERSONNEL ONLY signs were definitely just suggestions.</div>
+<div id="bot">
+<button class="vb on" data-v="walk">Walk</button>
+<button class="vb" data-v="look">Look</button>
+<button class="vb" data-v="open">Open</button>
+<button class="vb" data-v="use">Use</button>
+<button class="vb" data-v="take">Take</button>
+<button class="vb" data-v="push">Push</button>
+<div id="sep"></div>
+<div id="inv"></div>
+</div>
+</div>
+<script>
+const cv=document.getElementById('c'),ct=cv.getContext('2d');
+ct.imageSmoothingEnabled=false;
+const C={K:'#000',nv:'#0000AA',nv2:'#000066',bl:'#5555FF',cy:'#55FFFF',tl:'#00AAAA',ag:'#55FF55',gn:'#00AA00',mr:'#AA0000',rd:'#FF5555',dr:'#660000',ol:'#AA5500',yw:'#FFFF55',og:'#CC7700',am:'#DDAA00',lg:'#AAAAAA',mg:'#888888',dg:'#555555',wh:'#FFFFFF',sk:'#FFBB88',sl:'#446688',hw:'#667799',w2:'#334466',f1:'#1E2A38',f2:'#263444',K3:'#111122',K4:'#1A1A2E',p1:'#1A4A2A',p2:'#2A6A3A',p3:'#3A8A4A',sw:'#99BBCC',pk:'#FF55FF',pu:'#AA00AA',cr:'#FFEECC',mh:'#3A5570'};
+function f(c,x,y,w,h){if(w>0&&h>0){ct.fillStyle=c;ct.fillRect(x,y,w,h);}}
+function tx(s,x,y,col,sz){ct.fillStyle=col;ct.font='bold '+(sz||9)+'px monospace';ct.fillText(s,x,y);}
+function msg(s){document.getElementById('msg').textContent=s;}
+
+// Sound
+let AC;
+function snd(fr,d,v,t,dl){v=v||.08;t=t||'square';dl=dl||0;
+  if(!AC)try{AC=new AudioContext();}catch(e){}if(!AC)return;
+  setTimeout(()=>{try{const o=AC.createOscillator(),g=AC.createGain();o.connect(g);g.connect(AC.destination);o.type=t;o.frequency.value=fr;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);o.start();o.stop(AC.currentTime+d);}catch(e){}},dl);
+}
+const S={
+  ui:()=>{snd(440,.04);snd(660,.04,.06,'square',70);},
+  err:()=>snd(180,.2,.1,'sawtooth'),
+  pick:()=>{snd(660,.08);snd(880,.1,.06,'square',110);},
+  con:()=>{[440,550,660,770].forEach((f,i)=>snd(f,.07,.07,'square',i*80));},
+  rose:()=>{snd(620,.3,.05,'sine');snd(780,.4,.05,'sine',320);snd(650,.25,.04,'sine',700);},
+  cnt:()=>snd(880,.1,.13),
+  lnch:()=>{snd(100,.8,.2,'sawtooth');snd(220,.5,.12,'square',400);snd(180,.6,.15,'sawtooth',200);},
+  htch:()=>{snd(300,.12,.1);snd(180,.2,.09,'square',160);},
+  clk:()=>snd(660,.04,.07),
+  sit:()=>{snd(200,.1,.08);snd(300,.1,.06,'square',120);},
+  stm:()=>{snd(200,.3,.04,'sawtooth');},
+  chrp:()=>{[[620,.12],[880,.08],[740,.1],[960,.09],[700,.14],[830,.08],[780,.12],[920,.1],[650,.15],[860,.09],[720,.11],[980,.08],[760,.13]].forEach(([fr,d],i)=>snd(fr,d,.035,'sine',i*160+Math.floor(i/4)*80));},
+  alarm:()=>{[880,660,880,660].forEach((fr,i)=>snd(fr,.12,.18,'square',i*140));}
+};
+
+// State
+const G={
+  room:'bay',verb:'walk',inv:['lollipop','rose'],score:0,showIntro:true,
+  flags:{keyTaken:false,hatchOpen:false,btnPressed:false,ejected:false,chairPts:false,fuelLine:false,consoleUsed:false,countdown:false},
+  useCount:0,roseClicks:0,slimeTimer:0,rosePopup:false,invPopup:null,
+  pen:{x:65,y:148,tx:65,ty:148,walking:false,frame:0,ft:0,dir:'right'},
+  hov:null,pendingAction:null,pendingUseItem:null,
+  crateL:0,crateR:0,crateMoving:false,
+  waitClick:false,waitMsg:'',waitFn:null,
+  roseX:65,roseY:155,// Rose follows Penelope with lag
+  hatchCloseProg:0,hatchClosing:false,
+  seated:false,
+  steamT:3,puffs:[],
+  countdown:-1,
+  planetPhase:'entry',planetProg:0,eyeAnim:0,windowPushes:0,easterEggUnlocked:false,crashProg:0,emergeProg:0,
+};
+
+// Inventory
+function updInv(){
+  const el=document.getElementById('inv');
+  if(!G.inv.length){el.innerHTML='<span style="color:#555577;font:10px monospace">empty</span>';return;}
+  el.innerHTML=G.inv.map(i=>`<span class="ii" onclick="ci('${i}')">${i}</span>`).join('');
+}
+function ci(item){
+  S.ui();
+  if(G.verb==='use'){
+    G.pendingUseItem=item;
+    if(item==='key')msg("Key selected — now click the hatch to unlock it!");
+    else if(item==='lollipop')msg("You wave the lollipop around. Nothing seems interested.");
+    else if(item==='rose'){S.rose();G.pendingUseItem='rose';msg("Rose is selected and ready to help. She is probably not going to help. Click something to try.");}
+    return;
+  }
+  G.pendingUseItem=null;
+  if(item==='lollipop'){if(G.verb==='look'){G.invPopup='lollipop';msg("Cherry lollipop. Very red. Slightly pocket-fuzzy. Still delicious. (Click to close)");}else{msg("Cherry lollipop. Slightly pocket-fuzzy. Still delicious.");}}
+  else if(item==='rose'){
+    if(G.verb==='look'||G.verb==='use'&&!G.pendingUseItem){
+      G.roseClicks++;
+      if(G.roseClicks>=10){G.roseClicks=0;G.slimeTimer=10;S.stm();msg("Rose makes a TERRIBLE face and squirts sea slime at you. 'GIVE ME A MOMENT.' You are now slimy.");}
+      else{S.rose();G.invPopup='rose';msg("Rose the tiny landhorse coos softly. She is your dear pet. She has tiny hooves and enormous eyes. Everything will be okay. (Click to close)");}
+    }else{
+      G.roseClicks++;
+      if(G.roseClicks>=10){G.roseClicks=0;G.slimeTimer=10;S.stm();msg("Rose squirts sea slime at you. 'GIVE ME A MOMENT.'");}
+      else{S.rose();msg("Rose coos thoughtfully. She has no idea what you want but is on board.");}
+    }
+  }
+  else if(item==='key'){if(G.verb==='look'){G.invPopup='key';msg("The hexagonal hatch key. Tagged 'MAINT. HATCH — BAY C-7'. (Click to close)");}else{msg("The hexagonal hatch key. Tagged 'MAINT. HATCH — BAY C-7'.");}}
+}
+updInv();
+
+// Hotspots
+const CONSOLE_QUIPS=['You flip a switch. A distant alarm bleats once. You back away quickly.','More switches. More beeping. A red light flashes. You flip it back. Crisis probably averted.','Screen shows: PLEASE RELOAD PROTOCOL 7. You have absolutely no idea what that means.','The panel goes BONG. You pretend that was intentional.',"A button says DO NOT PRESS. You press it. Nothing happens. Deeply disappointing.",'The screen flickers to a tropical fish screensaver. You watch for a calming moment.','You find a slider and push it to maximum. Something distant whirrs ominously.','The panel plays a little jingle. You did not know panels could do that.',"A stern voice says: UNAUTHORIZED ACCESS IN BAY C-7. That's definitely you."];
+const SHUTTLE_QUIPS=["You knock on the hull. CLONK CLONK. It's very hollow.",'You search for a hidden panel. The shuttle remains stubbornly uncooperative.',"You find a small hatch and press it. The shuttle goes 'tunk'.",'You peer into the engine nozzle. Very dark in there. Also warm.','You polish a spot with your sleeve. ARGO-7 gleams very slightly.',"You press your ear to the hull. Humming. Or maybe that's your ear.",'You give the shuttle a firm kick. Ow. The shuttle is completely fine.',"PROPERTY OF COLONY SHIP ARGO is stamped on the side. Noted.","You whisper the password. You don't know the password."];
+function doUseObj(type){
+  G.useCount++;
+  if(G.useCount===10&&!G.flags.fuelLine){
+    G.flags.fuelLine=true;G.flags.consoleUsed=true;S.con();
+    return'You flip EVERYTHING at once. The bay shudders. A fueling line EXTENDS from the shuttle with an enormous CLUNK! Console reads: FUELING IN PROGRESS. You step back, impressed with yourself.';
+  }
+  const quips=type==='console'?CONSOLE_QUIPS:SHUTTLE_QUIPS;
+  const q=quips[(G.useCount-1)%quips.length];
+  if(type==='console'){S.alarm();}else{S.ui();}
+  return q;
+}
+const SP={
+bay:[
+  {id:'win',n:'the viewing window',x:19,y:19,w:148,h:34,wx:90,wy:148,
+   look:"Stars stream past at warp 2. Beautiful and terrifying.",
+   push:()=>{G.windowPushes++;if(G.windowPushes>=10&&!G.easterEggUnlocked){G.easterEggUnlocked=true;S.chrp();G.eyeAnim=0;G.room='eyes';setTimeout(()=>{G.room='bay';},7000);return"The glass fogs up from your breath... then clears to show your own wide eye staring back. Spooky. The window shudders. Something just unlocked.";}return["You press your nose to the cold glass. Your breath fogs it up.","You're still breathing on it. It's very fogged.","You've made a nose-print. Impressive.",][G.windowPushes%3];},
+   use:"You stare into space dramatically. Very heroic.",take:"Can't take the window."},
+  {id:'shuttle',n:'colony shuttle ARGO-7',x:183,y:90,w:135,h:38,wx:182,wy:155,
+   look:"A Type-7 Colony Shuttle. Smells like engine oil and cold fries.",take:"Won't fit in your pocket.",
+   use:()=>doUseObj('shuttle'),
+   push:"It doesn't move. It's a shuttle."},
+  {id:'key',n:'the hatch key',x:54,y:98,w:23,h:16,wx:46,wy:148,
+   vis:()=>!G.flags.keyTaken,
+   look:"A hexagonal maintenance hatch key. Tagged 'MAINT. HATCH — BAY C-7'.",
+   take:()=>{G.flags.keyTaken=true;G.inv.push('key');updInv();S.pick();msg("You pocket the hatch key! Finders keepers in a restricted area!");return null;},
+   use:"You should TAKE it.",open:"TAKE it.",push:"TAKE it."},
+  {id:'panel',n:'the control panel',x:10,y:54,w:74,h:56,wx:46,wy:148,
+   look:()=>G.flags.keyTaken?"Control panel. Status lights blinking. Someone left a key tray empty here.":"Rows of controls and status readouts. A small hexagonal key sits in the lower-right corner.",
+   use:()=>doUseObj('console'),
+   push:"Lights blink.",take:"Bolted down."},
+  {id:'sign',n:'the warning sign',x:108,y:59,w:72,h:20,wx:130,wy:148,
+   look:"'AUTHORIZED PERSONNEL ONLY. Violators will be escorted to the airlock.' You are definitely unauthorized.",
+   take:"Can't take a sign.",push:"It's on the wall.",use:"You read it again. Still says NO."},
+  {id:'crates',n:'the cargo crates',x:102,y:118,w:68,h:26,wx:135,wy:160,
+   vis:()=>G.crateL<45,
+   look:"Two very large crates stamped 'FRAGILE' and 'THIS SIDE UP' — currently very much THIS SIDE DOWN. They lean against each other like two tired friends. One nudge and they'd both have opinions about gravity.",
+   open:()=>doCrates(),push:()=>doCrates(),use:()=>doCrates(),take:"Way too heavy."},
+  {id:'hatch',n:'the maintenance hatch',x:106,y:121,w:60,h:18,wx:136,wy:155,
+   vis:()=>G.crateL>=40,
+   look:()=>G.flags.hatchOpen?"The hatch is open! Perfect hiding spot!":G.inv.includes('key')?"A round locked hatch. You have the key — select USE, click the key in your inventory, then click the hatch!":"A round maintenance hatch. Locked tight. You need the key sitting on the control panel...",
+   open:()=>doHatch(false),use:()=>doHatch(false),push:()=>doHatch(false),take:"You can go through it, not take it."}
+],
+pod:[
+  {id:'hdoor',n:'the sealed entry hatch',x:4,y:62,w:42,h:88,wx:56,wy:175,
+   look:"Sealed completely. No handle on this side. A plaque reads: 'SIEVERT INDUSTRIES ESCAPE POD — Mk.7B'. Oh. OH.",
+   open:"Completely sealed. The lock makes a 'nope' sound.",use:"You push, pull, and kick it. Nope.",
+   push:"The hatch does not care about your feelings.",take:"It is the only exit. Also sealed."},
+  {id:'port',n:'the porthole',x:258,y:46,w:54,h:54,wx:236,wy:178,
+   look:()=>G.flags.ejected?"Stars. Cold, silent stars. And... is that the colony ship? Getting smaller. Oh no.":"Through the porthole: the warm glow of the shuttle bay. You're still docked.",
+   push:"Ice cold glass against your palm. 'Mom...' you whisper.",
+   use:"Space refuses to blink first.",take:"Part of the hull."},
+  {id:'chair',n:'the acceleration chair',x:147,y:72,w:100,h:100,wx:197,wy:172,
+   look:"A very tall acceleration chair — backing must be six feet at least. Complex harness. The headrest label says: 'BRACE FOR LAUNCH' in urgent yellow letters.",
+   use:()=>doChair(),open:()=>doChair(),push:()=>doChair(),take:"Bolted to the pod floor."},
+  {id:'btn',n:'the launch button',x:90,y:140,w:20,h:16,wx:112,wy:176,
+   look:"A big red button labelled EMERGENCY LAUNCH. It pulses urgently. If you press it, surely an adult will come sort things out... right?",
+   push:()=>G.seated?"You're buckled into the chair! Unbuckle first, then push the big red button. Or don't. No pressure. (There is pressure.)":doBtn(),use:()=>G.seated?"You're buckled into the chair! Unbuckle first, then use the launch button.":doBtn(),open:"It opens by being pressed.",take:"Embedded in panel."},
+  {id:'cp',n:'the control panel',x:60,y:89,w:90,h:75,wx:112,wy:176,
+   look:"Banks of alien-script controls. 'DESTINATION: CALCULATING...' 'LIFE SUPPORT: NOMINAL'. Small comfort.",
+   use:"You press several alien buttons confidently. Screen: 'ERROR 7: UNKNOWN INPUT'. Progress.",
+   push:"It's part of the hull.",take:"Cannot."}
+]};
+
+// Handlers
+function doCrates(){
+  if(G.crateL>=45){S.err();return"The crates are already tipped aside.";}
+  G.crateMoving=true;S.ui();
+  msg("You grab the crate handle and HEAVE. The whole stack SPLITS APART in two directions with a spectacular CRASH — completely empty inside! [click to continue]");
+  G.waitClick=true;
+  G.waitMsg="A maintenance hatch! With a wheel-handle! This is the PERFECT hiding spot! If only it weren't locked...";
+  return null;
+}
+function doHatch(useKey){
+  if(G.crateL<40){S.err();return"Something's behind there but you can't reach it yet.";}
+  // Already unlocked — enter the hatch
+  if(G.flags.hatchOpen){
+    S.htch();
+    msg("You climb through the open hatch. The darkness swallows you... (Click to continue)");
+    G.waitClick=true;
+    G.waitMsg="";
+    G.waitFn=()=>{G.pen.tx=136;G.pen.ty=163;G.pen.walking=true;G.pendingAction={type:'enterHatch'};};
+    return null;
+  }
+  // Locked — no key
+  if(!G.inv.includes('key')){
+    S.err();return"Locked. You need the hatch key. Wait, what's that shiny gold thingie on the console? (Hint: Select TAKE and click the gold key)";
+  }
+  // Locked — has key but not using it from inventory
+  if(!useKey){
+    S.err();return"It's locked. You have the key though! Select USE, click the KEY in your inventory, then click the hatch to unlock it.";
+  }
+  // useKey=true — unlock only, player must then Use/Open the hatch to enter
+  G.inv=G.inv.filter(i=>i!=='key');updInv();
+  G.flags.hatchOpen=true;S.htch();
+  msg("You fit the key into the wheel-handle and turn. CLICK-CLICK-CLICK. (Click to continue)");
+  G.waitClick=true;
+  G.waitFn=null;
+  G.waitMsg="The hatch swings open! A dark room waits below. Use or Open the hatch to climb in.";
+  return null;
+}
+function doChair(){
+  if(G.seated){msg("You're already buckled in. The harness is very thorough.");return null;}
+  S.sit();
+  G.seated=true;
+  msg("You lower yourself into the acceleration chair. CLICK. The harness locks into place. You tuck Rose safely into your pocket. Very thorough. Very final-feeling.");
+  return null;
+}
+function tryStand(){
+  if(!G.seated)return;S.sit();
+  setTimeout(()=>{G.seated=false;},800);
+}
+function doBtn(){
+  if(G.seated){S.err();return"You're strapped into the chair. Stand up first, then press the button. (Or... maybe that's a bad idea anyway.)";}
+  if(G.flags.btnPressed){S.err();return"Already pressed. Something's counting down.";}
+  G.flags.btnPressed=true;G.flags.ejected=true;S.clk();
+  msg("You press the button. Someone will definitely come. An adult. Any second now. Very responsible adults who handle emergencies. Yes. (Click to continue)");
+  G.waitClick=true;
+  G.waitMsg="LAUNCH IN 10 SECONDS. Wait — WHAT?! This was NOT supposed to happen...";
+  G.waitFn=()=>{
+    G.flags.countdown=true;G.countdown=10;
+    const tick=()=>{G.countdown--;S.cnt();if(G.countdown>0)setTimeout(tick,1000);else{S.lnch();startEject();}};
+    setTimeout(tick,1000);
+  };
+  return null;
+}
+function enterPod(){
+  G.room='pod';G.pen.x=30;G.pen.y=178;G.pen.tx=30;G.pen.ty=178;G.pen.dir='right';
+  G.hatchClosing=false;G.hatchCloseProg=0;G.seated=false;
+  msg("The hatch CLANGS shut behind you. No handle inside. Tiny metal room. A very tall acceleration chair. A porthole. And a large, red, very urgent-looking button. It's probably fine.");
+}
+function startEject(){
+  G.room='eject';
+  const ws=G.seated;
+  const lines=[
+    {t:0,   s:"⚠  ALERT: EMERGENCY LAUNCH SEQUENCE INITIATED  ⚠"},
+    {t:5000, s:"The pod SHUDDERS. Explosive bolts fire. Enormous G-force!"},
+    ...(ws?[{t:10000,s:"The harness holds firm. You are pressed firmly to the seat. Smart."}]:[{t:10000,s:"You ricochet around the pod like a pinball. Your elbow finds every single corner. OW."}]),
+    {t:15000,s:"Through the porthole, colony ship ARGO shrinks to a dot... then vanishes into the dark."},
+    {t:20000,s:"Entering atmosphere of an uncharted planet...",fn:()=>{G.room='atmo';G.planetProg=0;}},
+    {t:30000,s:"BRACE FOR IMPACT!",fn:()=>{G.room='crash';G.crashProg=0;}},
+    {t:34000,s:"CRASH.",fn:()=>{G.room='surface';G.emergeProg=0;}},
+    {t:38000,s:"..."},
+    {t:42000,s:"...silence..."},
+    {t:46000,s:"...a strange bird-ish creature trills somewhere outside the hull.",fn:()=>S.chrp()},
+    {t:51000,s:"Something shifts inside the wreckage...",fn:()=>{G.room='emerge';G.emergeProg=0;}},
+    {t:57000,s:"\"I'm alive,\" Penelope whispers. \"Also extremely grounded when Mom finds out.\""},
+    {t:62000,s:"▶  TO BE CONTINUED  ◀",fn:()=>{G.room='planet_surface';}}
+  ];
+  if(G.easterEggUnlocked){
+    lines.splice(9,0,{t:43500,s:"Penelope opens one eye.",fn:()=>{G.room='eyes';G.eyeAnim=0;}});
+    lines.splice(10,0,{t:47500,s:"",fn:()=>{G.room='surface';}});
+  }
+  lines.forEach(l=>setTimeout(()=>{msg(l.s);if(l.fn)l.fn();},l.t));
+}
+
+// Drawing helpers
+function drawFloor(x,y,w,h,c1,c2){
+  ct.save();ct.beginPath();ct.rect(x,y,w,h);ct.clip();
+  f(c1,x,y,w,h);
+  const TW=10,TH=5;
+  for(let r=0;r*TH<h+TH;r++){for(let c=-1;c*TW<w+TW;c++){
+    if((r+c)%2===0)continue;
+    const ox=(r%2)*(TW/2),cx=x+c*TW+ox+TW/2,cy=y+r*TH;
+    ct.fillStyle=c2;ct.beginPath();ct.moveTo(cx,cy-TH/2);ct.lineTo(cx+TW/2,cy);ct.lineTo(cx,cy+TH/2);ct.lineTo(cx-TW/2,cy);ct.closePath();ct.fill();
+  }}
+  ct.restore();
+}
+function drawStarWin(){
+  ct.save();ct.beginPath();ct.rect(20,20,147,31);ct.clip();
+  f(C.K,20,20,147,31);
+  const t=Date.now()/7000;
+  for(let i=0;i<50;i++){
+    const sx=((i*61.3-t*25*(.3+(i%5)*.2)*50)%147+147)%147+20;
+    const sy=(i*17.9)%31+20;
+    ct.fillStyle=i%5?'#fff':'#55ffff';ct.fillRect(sx,sy,i%9===0?2:1,1);
+  }
+  ct.restore();
+}
+function updSteam(dt){
+  if(G.room!=='bay')return;G.steamT-=dt;
+  if(G.steamT<=0){
+    G.steamT=3.5+Math.random()*4;
+    for(let i=0;i<6;i++)G.puffs.push({x:303+(Math.random()*4-2),y:97+i*1.5,l:2.6+Math.random()*.8,m:3.4,sp:2+Math.random()*2});
+    for(let i=0;i<6;i++)G.puffs.push({x:303+(Math.random()*4-2),y:113+i*1.5,l:2.6+Math.random()*.8,m:3.4,sp:2+Math.random()*2});
+    S.stm();
+  }
+  G.puffs=G.puffs.filter(p=>{p.l-=dt;return p.l>0;});
+}
+function drawSteam(){
+  G.puffs.forEach(p=>{
+    const a=p.l/p.m,pr=1-a,sp=p.sp||2;
+    const px=Math.min(313,p.x+Math.sin(pr*6)*5),py=p.y-pr*sp*12;
+    const sz=Math.max(2,Math.round(2+pr*7));
+    ct.globalAlpha=a*.75;
+    f(C.wh,px-1,py-1,sz+2,sz+2);
+    ct.globalAlpha=a*.45;
+    f(C.lg,px+1,py+1,sz,sz);
+    ct.globalAlpha=1;
+  });
+}
+
+// Bay scene
+function drawBay(){
+  const b1=Math.floor(Date.now()/500)%2,b2=Math.floor(Date.now()/700)%2,b3=Math.floor(Date.now()/300)%2;
+  // Ceiling
+  f(C.K4,0,11,320,10);[50,130,210,290].forEach(x=>{f(C.am,x,13,18,4);f(b1?C.yw:C.am,x+2,14,14,2);});
+  // Star window
+  drawStarWin();
+  f(C.lg,19,19,148,1);f(C.lg,19,50,148,1);f(C.lg,19,19,1,33);f(C.lg,166,19,1,33);f(C.lg,90,19,1,33);
+  // Walls
+  f(C.w2,0,53,320,57);f(C.sl,0,53,320,2);f(C.K3,0,109,320,2);
+  [80,183,303].forEach(x=>{f(C.K3,x,53,2,57);f(C.sl,x+2,53,1,57);});
+  // Warning sign
+  f(C.mr,108,58,72,20);f(C.rd,110,60,68,16);
+  tx('AUTHORIZED',113,68,C.yw,8);tx('PERSONNEL ONLY',111,74,C.yw,6);
+  // Cargo Bay sign (larger, on right wall section)
+  f(C.nv,200,58,100,22);f(C.bl,200,58,100,2);f(C.bl,200,78,100,2);
+  tx('CARGO BAY',205,73,C.wh,12);
+  drawSteam();
+  // 1. Floor first — everything else draws on top
+  drawFloor(0,110,320,90,C.f1,C.f2);f(C.hw,0,110,320,2);
+  // Console base plinth — solid block so floor tiles don't show under it
+  f(C.dg,0,110,84,17);f(C.K3,0,110,83,15);f(C.sl,83,110,1,17);f(C.K4,0,108,84,3);
+  // 2. Console — expanded, lower desk taller, y:54-116
+  f(C.dg,8,54,76,62);f(C.dg,8,54,2,62);f(C.sl,82,54,2,62);
+  f(C.mg,8,54,76,2);
+  f(C.K3,10,56,72,14);
+  f(C.K,12,58,46,10);f(C.nv,12,58,46,4);
+  tx('SYS OK',13,62,C.ag,5);f(C.K,12,63,46,5);
+  tx('SPD:WARP 2',13,67,C.cy,5);
+  f(C.mg,10,72,72,2);
+  f(C.K4,10,74,72,22);
+  f(C.sl,10,74,72,1);
+  [[13,78,b1?C.rd:C.mr],[19,78,b2?C.ag:C.gn],[25,78,b3?C.yw:C.og],[31,78,b1?C.cy:C.tl],[37,78,b2?C.pk:C.pu],[43,78,b3?C.rd:C.mr]].forEach(([lx,ly,lc])=>{f(lc,lx,ly,4,3);f(C.K,lx,ly,4,1);});
+  f(C.mg,13,83,6,4);f(C.lg,14,82,4,2);
+  f(C.mg,21,83,6,4);f(C.yw,22,84,4,2);
+  f(C.mg,29,83,6,4);f(C.lg,30,82,4,2);
+  f(C.K4,37,81,8,8);f(C.mg,39,82,4,4);f(C.lg,41,83,2,2);
+  tx('BAY:C-7',52,83,C.lg,5);
+  f(C.sl,10,96,72,1);
+  f(C.K3,10,97,72,19);
+  [98,101,104,107,110,113].forEach(y=>f(C.K,11,y,70,1));
+  if(!G.flags.keyTaken){
+    f(C.K3,54,98,23,16);
+    f(C.am,56,100,14,6);
+    f(C.yw,57,100,12,4);
+    f(C.og,56,100,4,6);
+    f(C.yw,57,101,2,4);
+    f(C.K,65,103,3,1);f(C.K,69,103,2,1);
+    tx('Key',57,110,C.cy,6);
+  }
+  // Floor-line trim
+  f(C.K3,8,114,76,2);f(C.dg,8,112,76,2);
+  // Console table legs — half height (11px)
+  f(C.dg,13,116,5,11);f(C.mg,14,116,3,10);
+  f(C.dg,74,116,5,11);f(C.mg,75,116,3,10);
+  f(C.dg,11,126,9,3);f(C.mg,11,126,9,2);
+  f(C.dg,72,126,9,3);f(C.mg,72,126,9,2);
+
+  // 3. Shuttle base plate + tall struts
+  // Vertical struts — two-tone: outer dark, inner highlight strip
+  f(C.dg,195,100,10,30);f(C.mg,196,100,2,28);
+  f(C.dg,210,100,10,30);f(C.mg,211,100,2,28);
+  f(C.dg,291,100,10,30);f(C.mg,292,100,2,28);
+  f(C.dg,306,100,10,30);f(C.mg,307,100,2,28);
+  // Base plate (wider than hull, sits below fuselage)
+  f(C.dg,179,126,143,10);
+  ct.globalAlpha=0.4;f(C.K,179,126,143,10);ct.globalAlpha=1;
+  f(C.dg,181,127,139,7);
+  f(C.mg,182,127,137,2);
+  // Skid runners on plate
+  f(C.K3,188,130,48,5);f(C.mg,189,130,46,2);
+  f(C.K3,276,130,48,5);f(C.mg,277,130,46,2);
+  // 4. Main fuselage (draws on top of struts + plate)
+  f(C.sl,183,90,135,38);f(C.sw,183,90,135,3);f(C.hw,183,126,135,3);
+  // Panel lines
+  f(C.w2,222,90,2,38);f(C.w2,261,90,2,38);
+  // Cockpit bubble (nose, left)
+  f(C.nv2,184,91,38,24);f(C.nv,186,93,34,20);
+  f(C.bl,186,93,34,3);
+  [[189,96],[193,102],[197,97],[201,105],[205,100]].forEach(([x,y])=>f(C.cy,x,y,1,1));
+  // Door (center)
+  f(C.mh,228,94,24,32);f(C.hw,228,94,24,2);f(C.hw,228,124,24,2);
+  f(C.sl,228,94,2,32);f(C.sl,250,94,2,32);
+  f(C.K4,230,96,20,28);f(C.dg,237,103,4,4);f(C.mg,238,104,2,2);
+  tx('ARGO-7',262,114,C.K,8);
+  // Engine pods (right)
+  f(C.dg,300,93,18,14);f(C.mg,300,93,18,3);f(C.K3,302,96,14,8);
+  f(C.dg,300,110,18,14);f(C.mg,300,110,18,3);f(C.K3,302,113,14,8);
+  f(C.K,316,97,4,6);f(C.K,316,114,4,6);
+  if(G.flags.fuelLine){f(b1?C.og:C.rd,315,98,5,4);f(b2?C.yw:C.og,315,115,5,4);}
+  // Nav lights
+  f(b3?C.rd:C.dr,183,90,3,3);f(b1?C.gn:C.K3,183,123,3,3);
+  // Landing gear legs (short, disappear into floor)
+  f(C.dg,197,118,6,6);f(C.dg,248,118,6,6);f(C.dg,299,118,6,6);
+  // Fueling line
+  if(G.flags.fuelLine){f(C.lg,175,103,10,3);f(C.mg,163,102,14,3);f(C.sl,149,101,16,3);f(C.ag,144,102,6,5);}
+  // Crates - split animation
+  const cL=Math.round(G.crateL),cR=Math.round(G.crateR);
+  if(cL<45){const lx=102-cL;f(C.ol,lx,118,34,25);f(C.og,lx+1,118,32,2);f(C.K,lx+17,118,1,25);tx('FRAGILE',lx+2,136,C.cr,6);}
+  else{f(C.ol,53,131,32,14);f(C.og,54,131,30,2);}
+  if(cR<45){const rx=136+cR;f(C.ol,rx,118,34,25);f(C.og,rx+1,118,32,2);f(C.K,rx+17,118,1,25);tx('FRAGILE',rx+2,136,C.cr,6);}
+  else{f(C.ol,236,131,32,14);f(C.og,237,131,30,2);}
+  // Hatch revealed
+  if(G.crateL>=38){
+    const ha=Math.min(1,(G.crateL-38)/8);ct.globalAlpha=ha;
+    f(C.mg,106,121,60,18);f(C.dg,106,121,60,1);f(C.dg,106,138,60,1);
+    f(C.lg,109,123,54,14);f(C.mg,126,124,22,4);f(C.lg,132,121,10,10);
+    f(G.flags.hatchOpen?C.ag:C.rd,157,123,6,5);tx('MAINT.',109,136,C.cy,8);
+    ct.globalAlpha=1;
+  }
+  // Hatch closing animation
+  if(G.hatchClosing){
+    const p=G.hatchCloseProg;
+    f(C.dg,106,121,Math.round(30*p),18);f(C.dg,166-Math.round(30*p),121,Math.round(30*p),18);
+  }
+  // Status bar
+  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('SHUTTLE BAY — COLONY SHIP ARGO',55,8,C.wh,11);tx('v0.10',274,8,C.lg,11);
+}
+
+// Pod scene
+function drawPod(){
+  const b1=Math.floor(Date.now()/500)%2,b2=Math.floor(Date.now()/380)%2,b3=Math.floor(Date.now()/600)%2;
+  // Walls
+  f(C.K4,0,11,320,189);[48,96,144,192,240,288].forEach(x=>{f(C.dg,x,11,2,155);f(C.sl,x+2,11,1,155);});
+  [44,88,132].forEach(y=>f(C.dg,0,y,320,1));
+  f(C.K,0,11,320,10);[60,160,260].forEach(x=>{f(C.am,x,12,20,5);f(b3?C.yw:C.am,x+2,13,16,3);});
+  // Floor - limited area only
+  drawFloor(0,164,320,36,C.f1,C.f2);f(C.hw,0,163,320,2);
+  // Entry hatch (sealed) — wall-mounted
+  f(C.K4,0,55,52,110);f(C.sl,51,55,2,110);
+  f(C.mg,4,62,42,88);f(C.sl,4,62,42,2);f(C.sl,4,148,42,2);
+  f(C.dg,4,62,2,88);f(C.dg,44,62,2,88);
+  f(C.rd,16,90,10,10);f(C.mg,18,115,6,18);
+  tx('SEALED',6,86,C.rd,7);
+  // Ladder — two rails down bottom half of hatch to floor
+  f(C.dg,11,115,3,49);f(C.mg,12,115,1,49);
+  f(C.dg,34,115,3,49);f(C.mg,35,115,1,49);
+  [120,128,136,144,152,160].forEach(y=>{
+    f(C.dg,11,y,26,3);f(C.mg,12,y+1,24,1);
+  });
+  // Control panel — y:89-149, sits into floor
+  // Upper shell (dark, screen area)
+  f(C.K3,60,89,90,46);f(C.sl,60,89,90,3);f(C.sl,60,89,3,46);f(C.sl,148,89,2,46);
+  f(C.K,64,92,56,28);f(C.nv,64,92,56,10);tx('ESC POD Mk.7B',65,101,C.cy,6);
+  f(C.K,64,102,56,18);tx('DEST: COMPUTING',65,109,C.tl,6);tx('LIFE SUPP:OK',65,115,C.ag,6);
+  tx('HULL: INTACT',65,121,C.cy,6);
+  if(G.flags.countdown&&G.countdown>=0){f(b2?C.rd:C.mr,64,124,56,7);tx('LAUNCH IN: '+G.countdown+'s',65,130,b2?C.yw:C.wh,6);}
+  // Divider + lower panel — distinct navy/teal color
+  f(C.tl,60,135,90,1);
+  f(C.nv2,60,136,90,28);f(C.sl,60,136,3,28);f(C.sl,148,136,2,28);
+  // Small blinking button (in lower panel)
+  f(C.dg,88,140,24,16);f(b2?C.rd:C.mr,92,143,16,10);f(b2?C.wh:C.rd,96,146,8,6);tx('LAUNCH',87,158,C.mg,6);
+  [[65,141,b1?C.ag:C.gn],[74,141,b3?C.cy:C.tl],[118,141,b2?C.yw:C.og]].forEach(([bx,by,bc])=>{f(bc,bx,by,7,7);f(C.K,bx,by,7,1);});
+  // Alert lights along ceiling when countdown active
+  if(G.flags.countdown){
+    const bf=Math.floor(Date.now()/120)%2;
+    const bff=Math.floor(Date.now()/90)%2;
+    // Red/yellow strobes across ceiling strip
+    [20,52,84,116,148,180,212,244,276,308].forEach((x,i)=>{
+      const on=(bf+i)%2;const col=i%3===0?C.rd:i%3===1?C.yw:C.og;
+      f(on?col:C.K3,x,12,26,8);
+      f(on?C.wh:C.K,x+10,13,6,2);
+    });
+  }
+  // Console legs
+  f(C.nv2,60,163,90,3);
+  f(C.dg,64,163,5,12);f(C.mg,65,163,3,11);
+  f(C.dg,141,163,5,12);f(C.mg,142,163,3,11);
+  f(C.dg,62,174,9,2);f(C.dg,139,174,9,2);
+  // Floor plinth
+  f(C.K3,60,164,90,4);f(C.dg,60,163,90,1);
+  // Chair — 2x scaled, shifted up 20px, y:72-170
+  f(C.K,227,70,8,96);// shadow
+  f(C.dg,163,72,8,96);f(C.mg,164,72,4,94);// left rail
+  f(C.dg,223,72,8,96);f(C.mg,224,72,4,94);// right rail
+  f(C.K3,163,72,68,24);f(C.dg,167,76,60,18);// headrest
+  f(C.mr,169,78,54,8);tx('BRACE FOR LAUNCH',171,85,C.yw,7);
+  f(C.K3,167,96,58,52);f(C.mh,171,100,50,44);// backrest
+  f(C.dg,171,100,4,44);f(C.dg,219,100,4,44);
+  f(C.am,181,96,4,44);f(C.am,205,96,4,44);// harness
+  f(C.dg,147,134,18,10);f(C.mg,149,134,14,8);// left armrest
+  f(C.dg,229,134,18,10);f(C.mg,231,134,14,8);// right armrest
+  f(C.K3,163,148,68,16);f(C.dg,167,150,60,12);f(C.mh,169,152,56,10);// seat
+  if(G.seated){f(C.og,169,156,56,6);}
+  f(C.dg,179,164,36,8);f(C.K3,185,170,24,6);// pedestal
+  // Porthole
+  f(C.mg,255,44,58,58);f(C.dg,257,46,54,54);
+  [[256,45],[306,45],[256,95],[306,95]].forEach(([bx,by])=>f(C.lg,bx,by,3,3));
+  f(G.flags.ejected?C.K:C.nv2,259,48,50,50);
+  if(G.flags.ejected){
+    [[262,52],[269,61],[277,55],[287,66],[295,53]].forEach(([x,y])=>f(C.wh,x,y,1,1));
+    f(C.cy,282,63,2,2);
+  }else{
+    f(C.sl,262,51,44,4);f(C.sl,262,51,4,44);f(C.sl,302,51,4,44);
+    f(C.am,271,53,12,8);tx('BAY',263,87,C.cy,8);
+  }
+  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('ESCAPE POD Mk.7B',90,8,C.wh,11);tx('v0.10',274,8,C.lg,11);
+}
+
+// Cutscene scenes
+function cutBar(){f(C.nv,0,0,320,11);tx('* CUTSCENE *',108,8,C.yw,11);}
+
+// Scene 1: eject — classic star-streaks + colony ship (old v3 style)
+function drawEject(){
+  f(C.K,0,0,320,200);
+  const t=Date.now()/1000;
+  for(let i=0;i<28;i++){
+    const sx=((i*47+Math.floor(t*140)*5)%350+350)%350-30;
+    const sy=(i*29+17)%180+11;
+    const len=4+(i%6)*3;
+    ct.fillStyle=i%3===0?C.wh:C.lg;ct.fillRect(sx,sy,len,1);
+  }
+  // Colony ship ARGO receding in background (upper right)
+  const shipX=210+t*3,shipY=38+Math.sin(t*.2)*2;
+  if(shipX<310){
+    const ss=Math.max(0.2,1-(shipX-210)/80);// shrinks as it moves away
+    const sw2=Math.round(62*ss),sh2=Math.round(21*ss);
+    f(C.sl,Math.round(shipX),Math.round(shipY),sw2,sh2);
+    f(C.sw,Math.round(shipX),Math.round(shipY),sw2,Math.round(sh2*.15));
+    if(sw2>12){f(C.nv2,Math.round(shipX+2),Math.round(shipY+sh2*.15),Math.round(sw2*.35),Math.round(sh2*.6));}
+    if(sw2>20){f(C.rd,Math.round(shipX+sw2*.85),Math.round(shipY+sh2*.3),Math.round(sw2*.12),Math.round(sh2*.35));}
+    // Engine glow
+    ct.globalAlpha=.6;f(C.yw,Math.round(shipX+sw2-.5),Math.round(shipY+sh2*.4),3,Math.round(sh2*.2));ct.globalAlpha=1;
+  }
+  // Circular escape pod drifting through space
+  const px=110+Math.sin(t*.5)*14+Math.sin(t*1.3)*5,py=90+Math.cos(t*.3)*10+Math.cos(t*.8)*6;
+  const pr=11;
+  // Sparks drawn FIRST (underneath smoke)
+  for(let i=1;i<=8;i++){
+    const si=(t*6+i*0.9)%1;
+    ct.globalAlpha=(1-si)*.9;
+    ct.fillStyle=i%2?C.yw:C.rd;
+    ct.beginPath();ct.arc(px+pr+i*3+Math.sin(t*4+i)*1.5,py+Math.cos(t*3+i)*2.5,Math.max(0.5,1.5-i*.1),0,Math.PI*2);ct.fill();
+  }
+  // Smoke puffs drawn ON TOP of sparks
+  for(let i=1;i<=8;i++){
+    const phase=(i/8+t*.5)%1;
+    ct.globalAlpha=Math.min(phase*2.5,1-phase*.85)*.65;
+    ct.fillStyle=i%2?C.lg:C.mg;
+    ct.beginPath();ct.arc(px+pr+4+phase*22,py+Math.sin(phase*Math.PI*1.5+i)*3,1+phase*4,0,Math.PI*2);ct.fill();
+  }
+  ct.globalAlpha=1;
+  // Pod body — circle
+  ct.beginPath();ct.arc(px,py,pr,0,Math.PI*2);ct.fillStyle=C.mg;ct.fill();
+  ct.beginPath();ct.arc(px,py,pr,0,Math.PI*2);ct.strokeStyle=C.lg;ct.lineWidth=1;ct.stroke();
+  // Top highlight (curved sheen)
+  ct.beginPath();ct.arc(px-2,py-3,pr*.6,Math.PI*1.2,Math.PI*1.9);ct.strokeStyle=C.sw;ct.lineWidth=1.5;ct.stroke();
+  // Porthole window
+  ct.beginPath();ct.arc(px-3,py-2,4,0,Math.PI*2);ct.fillStyle=C.nv2;ct.fill();
+  ct.beginPath();ct.arc(px-3,py-2,4,0,Math.PI*2);ct.strokeStyle=C.sl;ct.lineWidth=1;ct.stroke();
+  // Stars visible in porthole
+  [[px-4,py-3],[px-1,py-1]].forEach(([x,y])=>{ct.fillStyle=C.cy;ct.fillRect(x,y,1,1);});
+  // Heat shield flat bottom
+  ct.beginPath();ct.arc(px,py,pr,0.1,Math.PI-.1);ct.strokeStyle=C.dg;ct.lineWidth=2;ct.stroke();
+  // Thruster nozzle (left side, pod moving right)
+  ct.fillStyle=C.dg;ct.fillRect(px+pr-1,py-2,4,4);
+  ct.fillStyle=C.K;ct.fillRect(px+pr,py-1,3,2);
+  cutBar();
+}
+
+// Scene 2: atmosphere entry — pod shrinks toward planet surface
+function drawMoon(){
+  const mx=50,my=45,mr=14;
+  // Pink base (light rose)
+  ct.beginPath();ct.arc(mx,my,mr,0,Math.PI*2);ct.fillStyle='#DD88AA';ct.fill();
+  // Slightly darker pink layer for texture
+  ct.beginPath();ct.arc(mx,my,mr*.8,0,Math.PI*2);ct.fillStyle='#CC6699';ct.fill();
+  // Lighter pink highlight top-right
+  ct.beginPath();ct.arc(mx+3,my-4,mr*.5,0,Math.PI*2);ct.fillStyle='#EBAABB';ct.fill();
+  // Purple blotch (irregular ellipse-ish)
+  ct.beginPath();ct.ellipse(mx-5,my+3,5,4,0.4,0,Math.PI*2);ct.fillStyle='#7733AA';ct.fill();
+  ct.beginPath();ct.ellipse(mx+3,my+6,3,2,0.2,0,Math.PI*2);ct.fillStyle='#AA44CC';ct.fill();
+  // Blue blotch
+  ct.beginPath();ct.ellipse(mx+6,my-5,4,3,-0.3,0,Math.PI*2);ct.fillStyle='#3366BB';ct.fill();
+  ct.beginPath();ct.ellipse(mx-2,my-8,2,2,0,0,Math.PI*2);ct.fillStyle='#4499CC';ct.fill();
+  // Green blotch
+  ct.beginPath();ct.ellipse(mx-7,my-2,3,2,0.5,0,Math.PI*2);ct.fillStyle='#336633';ct.fill();
+  ct.beginPath();ct.ellipse(mx+2,my+2,2,3,-0.2,0,Math.PI*2);ct.fillStyle='#44AA55';ct.fill();
+  // Clip everything to moon circle
+  ct.save();ct.beginPath();ct.arc(mx,my,mr,0,Math.PI*2);ct.clip();
+  // Re-draw blotches clipped (so they don't bleed outside circle)
+  ct.fillStyle='#7733AA';ct.beginPath();ct.ellipse(mx-5,my+3,5,4,0.4,0,Math.PI*2);ct.fill();
+  ct.fillStyle='#AA44CC';ct.beginPath();ct.ellipse(mx+3,my+6,3,2,0.2,0,Math.PI*2);ct.fill();
+  ct.fillStyle='#3366BB';ct.beginPath();ct.ellipse(mx+6,my-5,4,3,-0.3,0,Math.PI*2);ct.fill();
+  ct.fillStyle='#4499CC';ct.beginPath();ct.ellipse(mx-2,my-8,2,2,0,0,Math.PI*2);ct.fill();
+  ct.fillStyle='#336633';ct.beginPath();ct.ellipse(mx-7,my-2,3,2,0.5,0,Math.PI*2);ct.fill();
+  ct.fillStyle='#44AA55';ct.beginPath();ct.ellipse(mx+2,my+2,2,3,-0.2,0,Math.PI*2);ct.fill();
+  ct.restore();
+  // Subtle rim
+  ct.beginPath();ct.arc(mx,my,mr,0,Math.PI*2);ct.strokeStyle='rgba(255,200,220,0.35)';ct.lineWidth=1;ct.stroke();
+}
+
+function drawAtmo(){
+  const pr=G.planetProg;
+  f(C.K,0,0,320,200);
+  // Stars
+  [[10,20],[30,15],[50,40],[80,8],[120,35],[160,12],[200,45],[250,20],[295,35],[15,60],[75,55],[220,18],[280,50]].forEach(([x,y])=>f(C.wh,x,y,1,1));
+  [[45,30],[140,25],[260,40]].forEach(([x,y])=>f(C.cy,x,y,1,1));
+  drawMoon();
+  // Planet base fill — clipped circle
+  ct.save();
+  ct.beginPath();ct.arc(160,220,115,0,Math.PI*2);ct.clip();
+  ct.fillStyle=C.p1;ct.fillRect(45,105,230,115);
+  // Surface texture patches — clipped so they cant bleed out
+  ct.fillStyle=C.p2;
+  [[90,112,55,28],[175,130,50,18],[120,148,40,15],[200,155,35,12],[80,158,30,10],[150,168,45,8]].forEach(([x,y,w,h])=>ct.fillRect(x,y,w,h));
+  // Lighter highland patches
+  ct.fillStyle=C.p3;
+  [[100,115,20,8],[195,135,18,6],[130,150,16,5]].forEach(([x,y,w,h])=>ct.fillRect(x,y,w,h));
+  // Dark crater patches
+  ct.fillStyle=C.p4;
+  [[155,140,14,8],[220,160,12,6],[95,165,10,5]].forEach(([x,y,w,h])=>ct.fillRect(x,y,w,h));
+  ct.restore();
+  // Planet rim
+  ct.beginPath();ct.arc(160,220,115,0,Math.PI*2);ct.strokeStyle=C.p3;ct.lineWidth=2;ct.stroke();
+  // Atmosphere glow ring
+  ct.beginPath();ct.arc(160,220,118,0,Math.PI*2);ct.strokeStyle='rgba(80,200,80,0.25)';ct.lineWidth=3;ct.stroke();
+  // Pod path: upper-right space -> surface impact at (210,162)
+  // pr 0->0.65: space approach, pr 0.65->1: skidding on surface
+  const podX=Math.round(pr<0.65 ? 275-pr*(275-210)/0.65 : 210);
+  const podY=Math.round(pr<0.65 ? 15+pr*(162-15)/0.65 : 162+(pr-0.65)*38/0.35);
+  const podR=Math.max(2,Math.round(8-pr*6));
+  const t=Date.now()/1000;
+  // Sparks — tight cluster behind pod (to the right), drawn FIRST so smoke overlaps
+  for(let i=0;i<8;i++){
+    const si=(t*8+i*1.8)%1;
+    const sx=podX+5+i*4+Math.sin(t*6+i)*2;
+    const sy=podY-2+Math.cos(t*5+i*1.3)*3;
+    ct.globalAlpha=(1-si)*.9;
+    ct.fillStyle=i%3?C.yw:i%2?C.rd:C.og;
+    ct.beginPath();ct.arc(sx,sy,1,0,Math.PI*2);ct.fill();
+  }
+  // Smoke puffs — stationary animated, drift right+slightly up behind pod
+  for(let i=0;i<10;i++){
+    const phase=(i/10+t*.5)%1;
+    const drift=phase*30;
+    const rise=phase*8;
+    const sway=Math.sin(phase*Math.PI*1.5+i)*4;
+    const alpha=Math.min(phase*2.5,1-phase*.85)*.7;
+    const sr=1+phase*7;
+    ct.globalAlpha=Math.max(0,alpha);
+    ct.fillStyle=i%2?C.lg:C.mg;
+    ct.beginPath();ct.arc(podX+4+drift,podY-rise+sway,sr,0,Math.PI*2);ct.fill();
+  }
+  ct.globalAlpha=1;
+  // Pod
+  ct.beginPath();ct.arc(podX,podY,podR,0,Math.PI*2);ct.fillStyle=C.mg;ct.fill();
+  ct.beginPath();ct.arc(podX,podY,podR,0,Math.PI*2);ct.strokeStyle=C.lg;ct.lineWidth=1;ct.stroke();
+  // Heat glow (leading edge, lower-left as pod descends)
+  ct.beginPath();ct.arc(podX-podR*.4,podY+podR*.4,podR*.7,0,Math.PI*2);ct.fillStyle='rgba(255,130,0,0.45)';ct.fill();
+  cutBar();
+}
+
+// Scene 3: crash — explosion on planet surface at impact point
+function drawCrash(){
+  const pr=G.crashProg;
+  // Same planet view
+  f(C.K,0,0,320,200);
+  [[10,20],[30,15],[50,40],[80,8],[120,35],[160,12],[200,45],[250,20],[295,35]].forEach(([x,y])=>f(C.wh,x,y,1,1));
+  drawMoon();
+  ct.save();
+  ct.beginPath();ct.arc(160,220,115,0,Math.PI*2);ct.clip();
+  ct.fillStyle=C.p1;ct.fillRect(45,105,230,115);
+  ct.fillStyle=C.p2;
+  [[90,112,55,28],[175,130,50,18],[120,148,40,15],[200,155,35,12],[80,158,30,10],[150,168,45,8]].forEach(([x,y,w,h])=>ct.fillRect(x,y,w,h));
+  ct.fillStyle=C.p3;[[100,115,20,8],[195,135,18,6],[130,150,16,5]].forEach(([x,y,w,h])=>ct.fillRect(x,y,w,h));
+  ct.fillStyle=C.p4;[[155,140,14,8],[220,160,12,6],[95,165,10,5]].forEach(([x,y,w,h])=>ct.fillRect(x,y,w,h));
+  ct.restore();
+  ct.beginPath();ct.arc(160,220,115,0,Math.PI*2);ct.strokeStyle=C.p3;ct.lineWidth=2;ct.stroke();
+  // Impact point: (210, 175) — on surface
+  const IX=210,IY=175;
+  // Pod still visible at impact point (tiny) before explosion engulfs it
+  if(pr<0.3){
+    ct.globalAlpha=1-pr*3;
+    ct.beginPath();ct.arc(IX,IY,2,0,Math.PI*2);ct.fillStyle=C.mg;ct.fill();
+    ct.globalAlpha=1;
+  }
+  // Impact flash
+  const flash=Math.max(0,1-pr*4);
+  if(flash>0){ct.globalAlpha=flash*.8;ct.fillStyle=C.wh;ct.fillRect(0,0,320,200);ct.globalAlpha=1;}
+  // Explosion rings expanding from impact
+  for(let ring=0;ring<4;ring++){
+    const rp=Math.max(0,pr-ring*.07);
+    const ra=Math.max(0,1-rp*2.2);
+    if(ra>0){
+      ct.globalAlpha=ra;
+      ct.beginPath();ct.arc(IX,IY,rp*45*(1+ring*.35),0,Math.PI*2);
+      ct.fillStyle=ring===0?C.yw:ring===1?C.og:ring===2?C.rd:C.mr;ct.fill();
+    }
+  }
+  ct.globalAlpha=1;
+  // Debris radiating outward — stays on planet surface (y+dist*0.4 perspective)
+  for(let i=0;i<20;i++){
+    const angle=i/20*Math.PI*2;
+    const dist=pr*40*(1+(i%3)*.4);
+    const dx=Math.round(IX+Math.cos(angle)*dist);
+    const dy=Math.round(IY+Math.sin(angle)*dist*0.45);
+    if(dist>3&&dx>45&&dx<275&&dy>105&&dy<200){
+      ct.fillStyle=i%3?C.rd:i%2?C.yw:C.og;
+      ct.beginPath();ct.arc(dx,dy,Math.max(1,2-pr),0,Math.PI*2);ct.fill();
+    }
+  }
+  // Smoke column rising from impact
+  const t2=Date.now()/1000;
+  for(let i=0;i<6;i++){
+    const sp=(i/6+t2*.3)%1*pr;
+    ct.globalAlpha=Math.min(sp*2,1-sp*.5)*.5;
+    ct.beginPath();ct.arc(IX+Math.sin(i*2)*4,IY-sp*25,2+sp*7,0,Math.PI*2);
+    ct.fillStyle=C.dg;ct.fill();
+  }
+  ct.globalAlpha=1;
+  cutBar();
+}
+
+// Scene 4: surface — crashed pod in clearing, Penelope emerges
+function drawSurface(){
+  const t=Date.now()/1000;
+  // Alien sky
+  ct.fillStyle='#1A1A2E';ct.fillRect(0,0,320,90);
+  [[15,12],[40,8],[80,18],[140,5],[200,14],[260,9],[300,20]].forEach(([x,y])=>{ct.fillStyle=C.wh;ct.fillRect(x,y,1,1);});
+  [[55,15],[170,10],[280,18]].forEach(([x,y])=>{ct.fillStyle=C.cy;ct.fillRect(x,y,1,1);});
+  // Vegetation
+  [[20,80],[60,75],[220,78],[270,72],[300,82]].forEach(([x,y])=>{
+    f(C.p4,x,y,12,90-y);f(C.p2,x-4,y-8,20,12);f(C.gn,x-2,y-5,16,8);
+  });
+  // Ground
+  f(C.p1,0,88,320,112);f(C.p2,0,88,320,3);f(C.gn,0,91,320,2);
+  // Scorch mark under crash site
+  ct.fillStyle='#111108';ct.beginPath();ct.ellipse(175,133,30,12,0,0,Math.PI*2);ct.fill();
+  // Crashed pod — dented, tilted (using game coords, transform handles scale)
+  ct.save();ct.translate(175,130);ct.rotate(0.18);
+  ct.beginPath();ct.ellipse(0,0,14,8,0,0,Math.PI*2);ct.fillStyle=C.dg;ct.fill();
+  ct.beginPath();ct.ellipse(0,0,14,8,0,0,Math.PI*2);ct.strokeStyle=C.mg;ct.lineWidth=1;ct.stroke();
+  ct.fillStyle=C.K3;ct.fillRect(-10,-4,4,3);ct.fillRect(7,-5,5,2);
+  ct.fillStyle=C.sl;ct.fillRect(-3,-7,6,3);
+  // Open hatch
+  ct.fillStyle=C.mg;ct.fillRect(-4,-9,8,4);ct.fillStyle=C.K;ct.fillRect(-3,-8,6,3);
+  ct.restore();
+  // Rising smoke
+  const smokeT=t*.4;
+  for(let i=0;i<8;i++){
+    const sp=(i/8+smokeT)%1;
+    ct.globalAlpha=Math.min(sp*3,1-sp*.8)*.55;
+    ct.beginPath();ct.arc(172+Math.sin(i*2.1)*4,128-sp*30,1+sp*5,0,Math.PI*2);
+    ct.fillStyle=i%2?C.mg:C.dg;ct.fill();
+  }
+  ct.globalAlpha=1;
+  // Penelope emerging head-first from pod hatch
+  const ep=G.room==='emerge'?Math.min(1,G.emergeProg):0;
+  if(ep>0.02){
+    const scale=0.42;
+    const sh=Math.round(26*scale),sw=Math.round(12*scale);
+    const ex=Math.round(175-sw/2);
+    // Sprite RISES from hatch rim (y:122):
+    // ep=0 → fy=122 (head at rim, feet below, nothing visible)
+    // ep=1 → fy=100 (fully out, head high, feet at rim)
+    // Clip always hides below y:122 so body emerges from inside pod upward
+    const fy=Math.round(122-sh*ep);
+    ct.save();ct.beginPath();ct.rect(ex-4,fy,sw+8,122-fy+2);ct.clip();
+    // Hair
+    ct.fillStyle=C.mr;ct.fillRect(ex+1,fy,sw-2,Math.max(1,Math.round(sh*.11)));
+    ct.fillStyle=C.dr;ct.fillRect(ex,fy+Math.round(sh*.06),1,Math.round(sh*.18));ct.fillRect(ex+sw-1,fy+Math.round(sh*.06),1,Math.round(sh*.18));
+    ct.fillStyle=C.mr;ct.fillRect(ex,fy-Math.round(sh*.08),Math.round(sw*.35),Math.round(sh*.1));
+    ct.fillStyle=C.dr;ct.fillRect(ex,fy-Math.round(sh*.08),Math.round(sw*.35),1);
+    ct.fillStyle=C.pk;ct.fillRect(ex,fy-Math.round(sh*.04),2,Math.round(sh*.06));
+    ct.fillRect(ex+Math.round(sw*.12),fy-Math.round(sh*.04),2,Math.round(sh*.06));
+    ct.fillRect(ex+Math.round(sw*.05),fy-Math.round(sh*.02),Math.round(sw*.08),Math.round(sh*.03));
+    // Face
+    ct.fillStyle=C.sk;ct.fillRect(ex+1,fy+Math.round(sh*.1),sw-2,Math.round(sh*.22));
+    ct.fillStyle=C.K;ct.fillRect(ex+Math.round(sw*.42),fy+Math.round(sh*.16),Math.max(1,Math.round(sw*.14)),1);
+    ct.fillRect(ex+Math.round(sw*.72),fy+Math.round(sh*.16),Math.max(1,Math.round(sw*.14)),1);
+
+    // Shirt
+    ct.fillStyle=C.tl;ct.fillRect(ex,fy+Math.round(sh*.32),sw,Math.round(sh*.26));ct.fillStyle=C.cy;ct.fillRect(ex,fy+Math.round(sh*.32),sw,1);
+    // Arms — raised outward when kneeling (ep<0.6), down when standing
+    const armRaise=Math.max(0,(0.6-ep)/0.6);// 1=kneeling arms up, 0=standing
+    const armOff=Math.round(armRaise*-4);// arms higher when kneeling
+    ct.fillStyle=C.tl;
+    ct.fillRect(ex-2,fy+Math.round(sh*.32)+armOff,2,Math.round(sh*.2));
+    ct.fillRect(ex+sw,fy+Math.round(sh*.32)+armOff,2,Math.round(sh*.2));
+    ct.fillStyle=C.sk;
+    ct.fillRect(ex-2,fy+Math.round(sh*.44)+armOff,2,Math.round(sh*.1));
+    ct.fillRect(ex+sw,fy+Math.round(sh*.44)+armOff,2,Math.round(sh*.1));
+    // Lower body: kneel (ep<0.6) → stand (ep>0.8)
+    // Kneeling: legs tucked, thighs horizontal, shins down
+    // Standing: legs straight down
+    const standP=Math.max(0,(ep-0.55)/0.45);// 0=kneeling, 1=standing
+    const torsoH=Math.round(sh*(0.22+standP*0.06));// torso gets slightly taller
+    ct.fillStyle=C.nv;ct.fillRect(ex+1,fy+Math.round(sh*.58),sw-2,torsoH);
+    if(standP<0.5){
+      // Kneeling: thighs go out to sides, shins point down
+      const kt=1-standP*2;// 1=full kneel, 0=mid-transition
+      const thighW=Math.round(sw*.5+kt*3);
+      // Left thigh (goes left)
+      ct.fillStyle=C.nv;ct.fillRect(ex-Math.round(kt*3),fy+Math.round(sh*.74),thighW,3);
+      // Right thigh (goes right)
+      ct.fillRect(ex+Math.round(sw*.5),fy+Math.round(sh*.74),thighW,3);
+      // Left shin (down from thigh tip)
+      ct.fillStyle=C.nv2;ct.fillRect(ex-Math.round(kt*3),fy+Math.round(sh*.77),3,Math.round(sh*.12+kt*3));
+      // Right shin
+      ct.fillRect(ex+Math.round(sw*.5)+thighW-3,fy+Math.round(sh*.77),3,Math.round(sh*.12+kt*3));
+      // Feet flat on ground (wide when kneeling)
+      ct.fillStyle=C.K3;
+      ct.fillRect(ex-Math.round(kt*3)-1,fy+Math.round(sh*.89+kt*.08),Math.round(sw*.35),2);
+      ct.fillRect(ex+Math.round(sw*.5)+thighW-4,fy+Math.round(sh*.89+kt*.08),Math.round(sw*.35),2);
+    }else{
+      // Standing: legs straight, feet together
+      const sp2=Math.min(1,(standP-0.5)*2);
+      ct.fillStyle=C.nv2;
+      ct.fillRect(ex+1,fy+Math.round(sh*.74),Math.round(sw*.44),Math.round(sh*.16));
+      ct.fillRect(ex+Math.round(sw*.52),fy+Math.round(sh*.74),Math.round(sw*.44),Math.round(sh*.16));
+      ct.fillStyle=C.K3;
+      ct.fillRect(ex,fy+Math.round(sh*.88),Math.round(sw*.5),Math.round(sh*.12));
+      ct.fillRect(ex+Math.round(sw*.52),fy+Math.round(sh*.88),Math.round(sw*.5),Math.round(sh*.12));
+    }
+    ct.restore();
+  }
+  f(C.nv,0,0,320,11);tx('* CUTSCENE *',108,8,C.yw,11);
+}
+
+// Easter egg: eye opening — creepy version
+function drawEyes(){
+  const t=Date.now()/1000;
+  const ea=G.eyeAnim;
+  // Deep red-black background with subtle pulse
+  const pulse=0.03*Math.sin(t*2.5);
+  ct.fillStyle=`rgb(${Math.round(8+pulse*40)},0,${Math.round(4+pulse*20)})`;
+  ct.fillRect(0,0,320,200);
+  // Slow scan-line effect — horizontal dark bands drift downward
+  for(let y=0;y<200;y+=4){
+    const phase=(y/200+t*.08)%1;
+    ct.fillStyle=`rgba(0,0,0,${0.06+Math.sin(phase*Math.PI)*0.06})`;
+    ct.fillRect(0,y,320,2);
+  }
+  const eh=Math.round(ea*30),ey=100-Math.round(eh/2);
+  if(eh>1){
+    // Eyelid glow — faint sickly green aura around each eye before it opens
+    const glowA=Math.min(1,ea*2)*.4;
+    ct.fillStyle=`rgba(40,180,60,${glowA})`;
+    ct.fillRect(15,ey-6,84,eh+12);
+    ct.fillStyle=`rgba(40,180,60,${glowA})`;
+    ct.fillRect(95,ey-6,84,eh+12);
+    // Iris — deep amber-yellow with vertical slit pupil
+    ct.fillStyle='#886600';ct.fillRect(22,ey,70,eh);
+    // Iris texture — concentric darker bands
+    ct.fillStyle='#664400';ct.fillRect(28,ey,58,1);ct.fillRect(28,ey+eh-1,58,1);
+    ct.fillStyle='#997722';ct.fillRect(30,ey+2,54,eh-4);
+    // Vertical slit pupil (narrows when fully open)
+    const slitW=Math.max(2,Math.round(8*(1-ea*.6)));
+    const slitX=22+35-Math.round(slitW/2);
+    ct.fillStyle='#050005';ct.fillRect(slitX,ey,slitW,eh);
+    // Eyelid lines (top and bottom edges, slightly jagged)
+    ct.fillStyle='#CCAA66';ct.fillRect(22,ey,70,1);ct.fillRect(22,ey+eh-1,70,1);
+    // Tiny red veins in the white of eye corners (only when ea > 0.5)
+    if(ea>0.5){
+      const va=Math.min(1,(ea-0.5)*2)*.7;
+      ct.fillStyle=`rgba(180,20,20,${va})`;
+      ct.fillRect(22,ey+3,5,1);ct.fillRect(22,ey+5,7,1);ct.fillRect(22,ey+7,4,1);
+      ct.fillRect(88,ey+4,4,1);ct.fillRect(86,ey+6,6,1);ct.fillRect(89,ey+8,3,1);
+    }
+    // Right eye — same but mirror
+    ct.fillStyle='#886600';ct.fillRect(102,ey,70,eh);
+    ct.fillStyle='#664400';ct.fillRect(108,ey,58,1);ct.fillRect(108,ey+eh-1,58,1);
+    ct.fillStyle='#997722';ct.fillRect(110,ey+2,54,eh-4);
+    const slitX2=102+35-Math.round(slitW/2);
+    ct.fillStyle='#050005';ct.fillRect(slitX2,ey,slitW,eh);
+    ct.fillStyle='#CCAA66';ct.fillRect(102,ey,70,1);ct.fillRect(102,ey+eh-1,70,1);
+    if(ea>0.5){
+      const va=Math.min(1,(ea-0.5)*2)*.7;
+      ct.fillStyle=`rgba(180,20,20,${va})`;
+      ct.fillRect(102,ey+3,5,1);ct.fillRect(102,ey+5,7,1);ct.fillRect(102,ey+7,4,1);
+      ct.fillRect(168,ey+4,4,1);ct.fillRect(166,ey+6,6,1);ct.fillRect(169,ey+8,3,1);
+    }
+    // Narrow dark bridge between eyes
+    ct.fillStyle='#1A0A0A';ct.fillRect(92,ey,10,eh);
+    // Reflection glint (tiny white dot in each iris, moves slightly)
+    const gx=Math.round(Math.sin(t*.8)*2);
+    ct.fillStyle='rgba(255,255,220,0.6)';
+    ct.fillRect(44+gx,ey+2,3,2);
+    ct.fillRect(124+gx,ey+2,3,2);
+  }
+  // Vignette — dark oval around the edges, focuses attention
+  const grad=ct.createRadialGradient(160,100,60,160,100,160);
+  grad.addColorStop(0,'rgba(0,0,0,0)');grad.addColorStop(1,'rgba(0,0,0,0.85)');
+  ct.fillStyle=grad;ct.fillRect(0,0,320,200);
+  cutBar();
+}
+
+// Planet surface placeholder
+function drawPlanetSurface(){
+  drawSurface();
+  // Smaller centered panel
+  ct.fillStyle='rgba(0,0,20,0.82)';ct.fillRect(50,108,220,64);
+  ct.strokeStyle=C.sl;ct.lineWidth=1;ct.strokeRect(50,108,220,64);
+  ct.fillStyle=C.yw;ct.font='bold 12px monospace';ct.textAlign='center';
+  ct.fillText('ZORBETH MINOR',160,127);
+  ct.fillStyle=C.cy;ct.font='bold 9px monospace';
+  ct.fillText('World map — coming soon',160,143);
+  ct.fillStyle=C.lg;ct.font='bold 7px monospace';
+  ct.fillText('Penelope must find a way home...',160,158);
+  ct.textAlign='left';
+}
+
+function drawEnd(){
+  drawPlanetSurface();
+  ct.fillStyle='rgba(0,0,40,0.7)';ct.fillRect(0,150,640,100);
+  ct.fillStyle=C.cy;ct.font='bold 9px monospace';ct.fillText('A GAME BY FINN & DAD',220,174);
+  ct.fillStyle=C.yw;ct.font='bold 20px monospace';ct.fillText('TO BE CONTINUED...',110,200);
+}
+
+// Penelope character
+function drawPen(){
+  if(G.room!=='bay'&&G.room!=='pod')return;
+  if(G.hatchClosing&&G.hatchCloseProg>.6)return;
+  if(G.seated&&G.room!=='pod')return;
+  const p=G.pen;
+  const sc=G.room==='pod'?1.6+Math.max(0,Math.min(1,(p.y-165)/22))*.2:.52+Math.max(0,Math.min(1,(p.y-112)/70))*.48;
+  const sh=Math.round(28*sc),sw=Math.round(14*sc);
+  if(sw<2||sh<2)return;
+  // Seated pose — same scale as walking, no extra doubling
+  if(G.seated&&G.room==='pod'){
+    const fpx=195-Math.round(sw/2),fpy=168-sh;
+    ct.save();ct.translate(fpx,fpy);
+    // Hair
+    ct.fillStyle=C.mr;ct.fillRect(1,0,sw-2,Math.max(2,Math.round(sh*.11)));
+    ct.fillStyle=C.dr;ct.fillRect(0,Math.round(sh*.06),1,Math.round(sh*.2));ct.fillRect(sw-1,Math.round(sh*.06),1,Math.round(sh*.2));
+    ct.fillStyle=C.mr;ct.fillRect(0,Math.round(-sh*.08),Math.round(sw*.35),Math.round(sh*.1));
+    ct.fillStyle=C.dr;ct.fillRect(0,Math.round(-sh*.08),Math.round(sw*.35),1);
+    ct.fillStyle=C.pk;ct.fillRect(0,Math.round(-sh*.04),2,Math.round(sh*.06));
+    ct.fillRect(Math.round(sw*.12),Math.round(-sh*.04),2,Math.round(sh*.06));
+    ct.fillRect(Math.round(sw*.05),Math.round(-sh*.02),Math.round(sw*.08),Math.round(sh*.03));
+    // Face + eyes
+    ct.fillStyle=C.sk;ct.fillRect(1,Math.round(sh*.1),sw-2,Math.round(sh*.22));
+    ct.fillStyle=C.K;
+    ct.fillRect(Math.round(sw*.42),Math.round(sh*.16),Math.max(1,Math.round(sw*.14)),1);
+    ct.fillRect(Math.round(sw*.72),Math.round(sh*.16),Math.max(1,Math.round(sw*.14)),1);
+
+    // Shirt
+    ct.fillStyle=C.tl;ct.fillRect(0,Math.round(sh*.32),sw,Math.round(sh*.26));ct.fillStyle=C.cy;ct.fillRect(0,Math.round(sh*.32),sw,1);
+    // Slime if active
+    if(G.slimeTimer>0){const sa=Math.min(1,G.slimeTimer/3);ct.globalAlpha=sa;ct.fillStyle='#22CC44';ct.fillRect(Math.round(sw*.2),Math.round(sh*.34),Math.round(sw*.18),Math.round(sh*.18));ct.globalAlpha=1;}
+    // Arms resting (same length as walking)
+    ct.fillStyle=C.tl;ct.fillRect(-2,Math.round(sh*.32),2,Math.round(sh*.2));ct.fillRect(sw,Math.round(sh*.32),2,Math.round(sh*.2));
+    ct.fillStyle=C.sk;ct.fillRect(-2,Math.round(sh*.44),2,Math.round(sh*.1));ct.fillRect(sw,Math.round(sh*.44),2,Math.round(sh*.1));
+    // Torso
+    ct.fillStyle=C.nv;ct.fillRect(0,Math.round(sh*.58),sw,Math.round(sh*.26));
+    // Legs straight down (sitting, visible below seat line)
+    ct.fillStyle=C.nv2;ct.fillRect(1,Math.round(sh*.74),Math.round(sw*.45),Math.round(sh*.2));
+    ct.fillStyle=C.nv2;ct.fillRect(Math.round(sw*.52),Math.round(sh*.74),Math.round(sw*.45),Math.round(sh*.2));
+    ct.fillStyle=C.K3;ct.fillRect(0,Math.round(sh*.9),Math.round(sw*.5),Math.round(sh*.1));
+    ct.fillStyle=C.K3;ct.fillRect(Math.round(sw*.52),Math.round(sh*.9),Math.round(sw*.5),Math.round(sh*.1));
+    ct.restore();return;
+  }
+  ct.save();ct.globalAlpha=G.hatchClosing?Math.max(0,1-G.hatchCloseProg*2):1;
+  const px=Math.round(p.x-sw/2),py=Math.round(p.y-sh),cw=sw*2,ch=sh*2;
+  ct.translate(px,py);if(p.dir==='left'){ct.translate(sw,0);ct.scale(-1,1);}
+  // Hair
+  ct.fillStyle=C.mr;ct.fillRect(1,0,sw-2,Math.max(2,Math.round(sh*.11)));
+  ct.fillStyle=C.dr;ct.fillRect(0,Math.round(sh*.06),1,Math.round(sh*.2));ct.fillRect(sw-1,Math.round(sh*.06),1,Math.round(sh*.2));
+  // Bun on back-top of head (left/trailing side)
+  ct.fillStyle=C.mr;ct.fillRect(0,Math.round(-sh*.08),Math.round(sw*.35),Math.round(sh*.1));
+  ct.fillStyle=C.dr;ct.fillRect(0,Math.round(-sh*.08),Math.round(sw*.35),1);
+  // Bow on bun (yellow, back of head)
+  ct.fillStyle=C.pk;ct.fillRect(0,Math.round(-sh*.04),2,Math.round(sh*.06));
+  ct.fillRect(Math.round(sw*.12),Math.round(-sh*.04),2,Math.round(sh*.06));
+  ct.fillRect(Math.round(sw*.05),Math.round(-sh*.02),Math.round(sw*.08),Math.round(sh*.03));
+  // Face + TWO EYES
+  ct.fillStyle=C.sk;ct.fillRect(1,Math.round(sh*.1),sw-2,Math.round(sh*.22));
+  ct.fillStyle=C.K;
+  ct.fillRect(Math.round(sw*.42),Math.round(sh*.16),Math.max(1,Math.round(sw*.14)),1);
+  ct.fillRect(Math.round(sw*.72),Math.round(sh*.16),Math.max(1,Math.round(sw*.14)),1);
+
+  // Shirt (teal)
+  ct.fillStyle=C.tl;ct.fillRect(0,Math.round(sh*.32),sw,Math.round(sh*.26));ct.fillStyle=C.cy;ct.fillRect(0,Math.round(sh*.32),sw,1);
+  // Slime streak — fades over 10 seconds
+  if(G.slimeTimer>0){
+    const sa=Math.min(1,G.slimeTimer/3);
+    ct.globalAlpha=sa;
+    ct.fillStyle='#22CC44';ct.fillRect(Math.round(sw*.2),Math.round(sh*.34),Math.round(sw*.18),Math.round(sh*.18));
+    ct.fillStyle='#44EE66';ct.fillRect(Math.round(sw*.22),Math.round(sh*.36),Math.round(sw*.1),Math.round(sh*.08));
+    ct.fillStyle='#22CC44';ct.fillRect(Math.round(sw*.3),Math.round(sh*.44),Math.round(sw*.12),Math.round(sh*.1));
+    ct.fillStyle='#11AA33';ct.fillRect(Math.round(sw*.32),Math.round(sh*.5),Math.round(sw*.08),Math.round(sh*.06));
+    ct.globalAlpha=1;
+  }
+  // Arms longer + swing
+  const af=p.walking?p.frame:0;
+  const afwd=af?Math.round(sh*.05):0,abk=af?-Math.round(sh*.05):0;
+  ct.fillStyle=C.tl;
+  ct.fillRect(-2,Math.round(sh*.32)+abk,2,Math.round(sh*.2));
+  ct.fillRect(sw,Math.round(sh*.32)+afwd,2,Math.round(sh*.2));
+  ct.fillStyle=C.sk;
+  ct.fillRect(-2,Math.round(sh*.44)+abk,2,Math.round(sh*.1));
+  ct.fillRect(sw,Math.round(sh*.44)+afwd,2,Math.round(sh*.1));
+  // Pants/legs animated
+  ct.fillStyle=C.nv;ct.fillRect(0,Math.round(sh*.58),sw,Math.round(sh*.28));
+  const lo=(p.walking&&p.frame)?Math.round(sh*.06):0;const lw=Math.round(sw*.44);
+  ct.fillStyle=C.nv2;ct.fillRect(0,Math.round(sh*.74),lw,Math.round(sh*.16));ct.fillRect(sw/2,Math.round(sh*.74)-lo,lw,Math.round(sh*.16));
+  // Shoes
+  ct.fillStyle=C.K3;ct.fillRect(0,Math.round(sh*.88),Math.round(sw*.5),Math.round(sh*.12));ct.fillRect(sw/2,Math.round(sh*.88)-lo,Math.round(sw*.5),Math.round(sh*.12));
+  ct.restore();
+}
+function drawHov(){
+  const sp=G.hov;if(!sp)return;
+  ct.strokeStyle=C.yw;ct.lineWidth=1;ct.strokeRect(sp.x+.5,sp.y+.5,sp.w-1,sp.h-1);
+  f(C.K,0,193,320,7);
+  const lbl='['+G.verb.toUpperCase()+'] '+sp.n;
+  ct.fillStyle=C.yw;ct.font='bold 6px monospace';ct.fillText(lbl,Math.max(1,(320-ct.measureText(lbl).width)/2),199);
+}
+function findSpot(gx,gy){
+  const arr=SP[G.room==='bay'?'bay':G.room==='pod'?'pod':null];
+  if(!arr)return null;
+  for(const s of arr){if(s.vis&&!s.vis())continue;if(gx>=s.x&&gx<s.x+s.w&&gy>=s.y&&gy<s.y+s.h)return s;}
+  return null;
+}
+function doInt(sp,v){
+  let r=sp[v];
+  if(!r){const d={look:`You look at ${sp.n}. Nothing unusual.`,open:"You can't open that.",use:"You can't use that now.",take:"You can't take that.",push:"Nothing happens."};r=d[v];}
+  if(typeof r==='function'){const res=r();if(res)msg(res);}else if(r)msg(r);
+}
+const PV=['open','use','push','take'];
+
+// Game loop
+function drawIntro(){
+  ct.fillStyle='rgba(0,0,10,0.88)';ct.fillRect(0,0,320,200);
+  f(C.nv,10,12,300,176);f(C.sl,10,12,300,2);f(C.sl,10,186,300,2);f(C.sl,10,12,2,176);f(C.sl,308,12,2,176);
+  f(C.nv2,12,14,296,16);
+  ct.fillStyle=C.yw;ct.font='bold 12px monospace';ct.textAlign='center';
+  ct.fillText('COLONY SHIP ARGO — YEAR 7 OF VOYAGE',160,26);
+  ct.fillStyle=C.cy;ct.font='bold 8px monospace';
+  const lines=[
+    'Somewhere between stars, aboard the colony ship ARGO,',
+    '847 colonists sleep, eat, argue about chores, and',
+    'desperately search for a new planet to call home.',
+    '',
+    'Among them: 43 children. And the children have',
+    'discovered that a ship with 12 decks, 200 corridors,',
+    'and frankly too many air ducts is an EXCELLENT place',
+    'for hide and seek.',
+    '',
+    'Penelope Vasquez-Park, age 12, is currently hiding',
+    'in the shuttle bay. With her is Rose,',
+    'her tiny pet landhorse.',
+    '',
+    'This is DEFINITELY not allowed. She has read the sign.',
+    'She disagrees. After all — who would find her HERE?',
+  ];
+  lines.forEach((l,i)=>{ct.fillStyle=l===''?C.K:i>13?C.yw:C.cy;ct.fillText(l,160,40+i*9);});
+  ct.fillStyle=C.mg;ct.font='bold 7px monospace';
+  ct.fillText('[ click anywhere to begin ]',160,185);
+  ct.textAlign='left';
+}
+
+function drawInvPopup(item){
+  const bx=100,by=50,bw=120,bh=100;
+  ct.fillStyle='rgba(0,0,0,0.55)';ct.fillRect(0,0,320,200);
+  f(C.nv2,bx,by,bw,bh);f(C.sl,bx,by,bw,2);f(C.sl,bx,by,2,bh);f(C.sl,bx+bw-2,by,2,bh);f(C.sl,bx,by+bh-2,bw,2);
+  f(C.nv,bx+2,by+2,bw-4,12);
+  if(item==='lollipop'){
+    tx('LOLLIPOP',bx+22,by+11,C.yw,8);
+    // Stick — thin cream line, game coords
+    f(C.cr,bx+58,by+57,2,28);
+    // Candy ball — all game coords (setTransform handles 2x)
+    ct.beginPath();ct.arc(bx+59,by+47,16,0,Math.PI*2);ct.fillStyle=C.rd;ct.fill();
+    ct.beginPath();ct.arc(bx+59,by+47,16,0,Math.PI*2);ct.strokeStyle=C.mr;ct.lineWidth=1;ct.stroke();
+    // Pink highlight patch (top left)
+    ct.beginPath();ct.arc(bx+52,by+41,7,-0.8,0.8);ct.strokeStyle='rgba(255,160,180,0.6)';ct.lineWidth=5;ct.stroke();
+    // White shine dot
+    f(C.wh,bx+52,by+40,4,3);
+    // Pocket fuzz dots (grey specks on candy)
+    [[bx+56,by+52],[bx+63,by+44],[bx+67,by+53],[bx+54,by+46],[bx+70,by+48]].forEach(([fx,fy])=>{f(C.mg,fx,fy,2,2);});
+    tx('Cherry lollipop',bx+16,by+bh-12,C.cy,5);
+    tx('Slightly pocket-fuzzy',bx+12,by+bh-5,C.mg,5);
+  }else if(item==='key'){
+    tx('HATCH KEY',bx+22,by+11,C.yw,8);
+    // Scaled-up version of the console key graphic — game coords only
+    const kx=bx+18,ky=by+35;// anchor
+    // Tray/backing
+    f(C.K3,kx,ky,84,26);
+    // Key body (amber rectangle)
+    f(C.am,kx+14,ky+6,52,14);
+    f(C.yw,kx+16,ky+6,48,9);// highlight
+    // Key head / ring end
+    f(C.og,kx+14,ky+6,14,14);
+    f(C.yw,kx+16,ky+8,8,8);// ring shine
+    f(C.K3,kx+19,ky+10,4,4);// ring hole
+    // Shaft shank
+    f(C.am,kx+28,ky+6,38,14);
+    f(C.yw,kx+30,ky+6,34,8);
+    // Teeth notches cut from bottom of shaft
+    f(C.K3,kx+44,ky+14,8,6);
+    f(C.K3,kx+58,ky+14,6,8);
+    f(C.K3,kx+70,ky+14,6,6);
+    // Tag hanging off ring
+    f(C.cr,kx+8,ky+21,12,6);f(C.K3,kx+9,ky+22,10,4);
+    tx('BAY C-7',kx+9,ky+25,C.cy,4);
+    tx('MAINT. HATCH — BAY C-7',bx+6,by+bh-12,C.cy,5);
+    tx('Property of Colony Ship ARGO',bx+4,by+bh-5,C.mg,5);
+  }
+  tx('Click to close',bx+28,by+bh-20,C.dg,5);
+}
+
+function drawRosePopup(){
+  // Box: 90x100 game units, centered at (160,100)
+  const bx=115,by=48,bw=90,bh=106;
+  // Dark overlay
+  ct.fillStyle='rgba(0,0,0,0.55)';ct.fillRect(0,0,320,200);
+  // Box
+  f(C.nv2,bx,by,bw,bh);f(C.sl,bx,by,bw,2);f(C.sl,bx,by,2,bh);f(C.sl,bx+bw-2,by,2,bh);f(C.sl,bx,by+bh-2,bw,2);
+  f(C.nv,bx+2,by+2,bw-4,12);
+  tx('ROSE',bx+30,by+11,C.yw,8);
+  // Rose the landhorse — seahorse-like shape in pixel art, centered in box
+  const rx=bx+22,ry=by+20;// top-left of rose drawing area
+  // Head/snout (seahorse head tilted)
+  f(C.og,rx+18,ry,12,8);
+  f(C.yw,rx+20,ry+1,8,5);
+  // Snout tip
+  f(C.og,rx+28,ry+3,6,3);
+  // Eye (large, round)
+  f(C.K,rx+20,ry+2,6,5);f(C.wh,rx+21,ry+2,5,4);f(C.nv,rx+22,ry+3,3,3);f(C.wh,rx+22,ry+3,1,1);
+  // Crest/fin on head
+  f(C.rd,rx+16,ry-3,4,5);f(C.pk,rx+18,ry-4,3,4);
+  // Neck
+  f(C.og,rx+15,ry+6,6,8);f(C.yw,rx+16,ry+7,4,6);
+  // Body (curved, wider in middle)
+  f(C.og,rx+10,ry+12,12,10);f(C.yw,rx+11,ry+13,10,8);
+  f(C.og,rx+8,ry+20,14,8);f(C.yw,rx+9,ry+21,12,6);
+  f(C.og,rx+10,ry+26,12,6);f(C.yw,rx+11,ry+27,10,4);
+  // Tail (curls right)
+  f(C.og,rx+14,ry+30,8,5);f(C.og,rx+18,ry+33,6,5);f(C.og,rx+20,ry+36,5,4);
+  f(C.yw,rx+15,ry+31,6,3);f(C.yw,rx+19,ry+34,4,3);
+  // Legs — extend right from lower body, bend down to hooves
+  // Front leg pair (upper)
+  f(C.og,rx+22,ry+14,7,3);// upper leg horizontal
+  f(C.yw,rx+23,ry+15,5,2);
+  f(C.og,rx+27,ry+14,3,9);// lower leg vertical
+  f(C.yw,rx+28,ry+15,2,7);
+  f(C.K3,rx+25,ry+22,6,2);f(C.K3,rx+24,ry+23,7,1);// hoof
+  // Back leg pair (lower)
+  f(C.og,rx+22,ry+22,7,3);
+  f(C.yw,rx+23,ry+23,5,2);
+  f(C.og,rx+27,ry+22,3,9);
+  f(C.yw,rx+28,ry+23,2,7);
+  f(C.K3,rx+25,ry+30,6,2);f(C.K3,rx+24,ry+31,7,1);// hoof
+  // Dorsal plates/spines
+  [[rx+9,ry+13],[rx+8,ry+18],[rx+8,ry+24]].forEach(([sx,sy])=>{f(C.am,sx,sy,3,4);f(C.yw,sx+1,sy,2,3);});
+  // Name tag below
+  f(C.K3,bx+8,by+bh-20,bw-16,16);
+  tx('Landhorse | Female | Friendly',bx+10,by+bh-11,C.cy,5);
+  tx('Click anywhere to close',bx+12,by+bh-4,C.mg,5);
+}
+
+function drawRosePet(){
+  // Disappear during hatch close, same as Penelope
+  if(G.hatchClosing&&G.hatchCloseProg>.6)return;
+  if(G.seated)return;
+  const rx=Math.round(G.roseX),ry=Math.round(G.roseY);
+  // Scale matches Penelope: pod is 2x, bay scales with depth
+  // Rose size: fixed small in bay, scaled 2x in pod to match Penelope
+  const rsc=G.room==='pod'?1.6+Math.max(0,Math.min(1,(ry-165)/22))*.2:.52+Math.max(0,Math.min(1,(ry-112)/70))*.48;
+  // 1px in bay, 2px in pod to match Penelope's 2x scale
+  const rs=G.room==='pod'?2:1;
+  const depthT=Math.max(0,Math.min(1,(ry-112)/70));
+  const roseAlpha=(G.hatchClosing?Math.max(0,1-G.hatchCloseProg*2):1)*(G.room==='pod'?1:0.25+depthT*0.75);
+  const ox=G.pen.dir==='right'?-Math.round(rs*2.5):Math.round(rs*2.5);
+  // Fade out with hatch close same as Penelope
+  ct.globalAlpha=roseAlpha;
+  // Crest
+  ct.fillStyle=C.rd;ct.fillRect(rx+ox,ry-rs*3,rs*2,rs);
+  // Head
+  ct.fillStyle=C.yw;ct.fillRect(rx+ox,ry-rs*2,rs*2,rs*2);
+  // Snout (faces direction of travel)
+  const snoutX=rx+ox+(G.pen.dir==='right'?-rs:rs*2);
+  ct.fillStyle=C.am;ct.fillRect(snoutX,ry-Math.round(rs*1.5),rs,rs);
+  // Eye
+  ct.fillStyle=C.K;ct.fillRect(rx+ox+(G.pen.dir==='right'?rs:0),ry-Math.round(rs*1.8),rs,rs);
+  // Body
+  ct.fillStyle=C.og;ct.fillRect(rx+ox,ry-rs,rs*2,rs*2);
+  ct.fillStyle=C.am;ct.fillRect(rx+ox,ry-rs,rs*2,rs); // top highlight
+  // Legs
+  ct.fillStyle=C.K3;ct.fillRect(rx+ox,ry+rs,rs,rs*2);ct.fillRect(rx+ox+rs,ry+rs,rs,rs*2);
+  ct.globalAlpha=1;
+}
+
+let lastT=0;
+function loop(ts){
+  const dt=Math.min((ts-lastT)/1000,.05);lastT=ts;
+  if(G.crateMoving){G.crateL=Math.min(50,G.crateL+dt*65);G.crateR=Math.min(50,G.crateR+dt*65);if(G.crateL>=50)G.crateMoving=false;}
+  if(G.hatchClosing){G.hatchCloseProg=Math.min(1,G.hatchCloseProg+dt);if(G.hatchCloseProg>=1)enterPod();}
+  if(G.room==='eyes')G.eyeAnim=Math.min(1,G.eyeAnim+dt*.35);
+  if(G.slimeTimer>0)G.slimeTimer=Math.max(0,G.slimeTimer-dt);
+  if(G.room==='atmo')G.planetProg=Math.min(1,G.planetProg+dt*.09);
+  if(G.room==='crash')G.crashProg=Math.min(1,G.crashProg+dt*.18);
+  if(G.room==='emerge')G.emergeProg=Math.min(1,G.emergeProg+dt*.12);
+  updSteam(dt);
+  // Rose follows Penelope slowly (lerp at 35% per second for lag)
+  if(G.room==='bay'||G.room==='pod'){
+    const rlerp=Math.min(1,dt*1.8);
+    G.roseX+=(G.pen.x-G.roseX)*rlerp;
+    G.roseY+=(G.pen.y-G.roseY)*rlerp;
+  }
+  if(!G.hatchClosing&&!G.seated&&(G.room==='bay'||G.room==='pod')){
+    const p=G.pen;const dx=p.tx-p.x,dy=p.ty-p.y,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<1.5){
+      p.x=p.tx;p.y=p.ty;p.walking=false;
+      if(G.pendingAction){const a=G.pendingAction;G.pendingAction=null;
+        if(a.type==='enterHatch'){G.hatchClosing=true;G.hatchCloseProg=0;S.htch();}
+        else if(a.type==='interact'){doInt(a.sp,a.v);S.ui();}}
+    }else{
+      p.walking=true;const r=Math.min(1,55*dt/d);p.x+=dx*r;p.y+=dy*r;
+      if(G.room==='bay'&&p.x>182&&p.y<=128){p.y=129;if(p.ty<129)p.ty=129;}
+      if(G.room==='bay'&&p.x<83&&p.y<=129){p.y=130;if(p.ty<130)p.ty=130;}
+      if(G.room==='pod'&&p.x>59&&p.x<151&&p.y<=168){if(p.x-59<151-p.x){p.x=60;if(p.tx>60)p.tx=60;}else{p.x=151;if(p.tx<151)p.tx=151;}}
+      if(G.room==='pod'&&p.x>=60&&p.x<=150&&p.y>89&&p.y<=168){p.y=169;if(p.ty<169)p.ty=169;}
+      if(G.room==='pod'&&!G.seated&&p.x>147&&p.x<247&&p.y>=72&&p.y<=172){if(p.y-72<172-p.y){p.y=71;if(p.ty>71)p.ty=71;}else{p.y=173;if(p.ty<173)p.ty=173;}}
+      if(G.room==='bay'&&G.crateL<40&&p.x>100&&p.x<172&&p.y>=118&&p.y<=143){if(p.y-118<144-p.y){p.y=117;if(p.ty>117)p.ty=117;}else{p.y=144;if(p.ty<144)p.ty=144;}}
+      if(dx<-.5)p.dir='left';else if(dx>.5)p.dir='right';
+      p.ft+=dt;if(p.ft>.14){p.frame=(p.frame+1)%2;p.ft=0;}
+    }
+  }
+  ct.setTransform(1,0,0,1,0,0);
+  ct.clearRect(0,0,cv.width,cv.height);
+  // Dynamic scale: fit 320x200 game into actual canvas pixel dimensions
+  const dscale=cv.getBoundingClientRect().width/320;
+  ct.setTransform(dscale,0,0,dscale,0,0);
+  if(G.room==='bay'){drawBay();drawPen();drawRosePet();if(!G.hatchClosing)drawHov();}
+  else if(G.room==='pod'){drawPod();drawPen();drawRosePet();drawHov();}
+  else if(G.room==='eject')drawEject();
+  else if(G.room==='atmo')drawAtmo();
+  else if(G.room==='crash')drawCrash();
+  else if(G.room==='surface'||G.room==='emerge')drawSurface();
+  else if(G.room==='eyes')drawEyes();
+  else if(G.room==='planet_surface')drawPlanetSurface();
+  else if(G.room==='end')drawEnd();
+  // Rose popup
+  if(G.invPopup==='rose'||G.rosePopup)drawRosePopup();
+  else if(G.invPopup)drawInvPopup(G.invPopup);
+  // Intro narrative
+  if(G.showIntro)drawIntro();
+  requestAnimationFrame(loop);
+}
+
+// Events
+cv.addEventListener('mousemove',e=>{
+  if(!['bay','pod'].includes(G.room)){cv.style.cursor='default';G.hov=null;return;}
+  const r=cv.getBoundingClientRect();
+  G.hov=findSpot(Math.floor((e.clientX-r.left)*320/r.width),Math.floor((e.clientY-r.top)*200/r.height));
+  cv.style.cursor=G.hov?'pointer':'crosshair';
+});
+cv.addEventListener('click',e=>{
+  if(G.showIntro){G.showIntro=false;return;}
+  if(G.hatchClosing)return;
+  if(G.invPopup){const was=G.invPopup;G.invPopup=null;G.rosePopup=false;msg(was==='rose'?'Rose coos and trots back to your side.':was==='lollipop'?"Mmm. Maybe later.":"You pocket the key again.");return;}
+  if(G.waitClick){G.waitClick=false;const fn=G.waitFn;G.waitFn=null;if(G.waitMsg)msg(G.waitMsg);if(fn)fn();return;}
+  if(!['bay','pod'].includes(G.room))return;
+  const r=cv.getBoundingClientRect();
+  const gx=Math.floor((e.clientX-r.left)*320/r.width);
+  const gy=Math.floor((e.clientY-r.top)*200/r.height);
+  const sp=findSpot(gx,gy);
+  if(G.seated){
+    if(G.verb==='walk'||!sp){tryStand();return;}
+    // Any non-walk interaction while seated — block and prompt
+    const seatOk=['chair'];// chair itself can still be interacted with while seated
+    if(!sp||!seatOk.includes(sp.id)){
+      S.err();
+      const seatedQuips=[
+        "You're strapped into the acceleration chair. Maybe get out of it first?",
+        "The harness has opinions about you moving. Those opinions are: NO.",
+        "You tug against the harness. The harness wins.",
+        "You're quite thoroughly buckled in. Unbuckle first.",
+      ];
+      msg(seatedQuips[Math.floor(Math.random()*seatedQuips.length)]);
+      return;
+    }
+  }
+  if(G.pendingUseItem&&sp){
+    // Using inventory item on a hotspot
+    if(G.pendingUseItem==='key'&&sp.id==='hatch'){
+      G.pendingUseItem=null;
+      doHatch(true);
+    }else{
+      const item=G.pendingUseItem;G.pendingUseItem=null;
+      if(item==='rose'){
+        S.rose();
+        const rq={win:"Rose peers through the viewing window and coos at the stars. This does not help.",shuttle:"Rose trots up to the shuttle and sniffs it. The shuttle is unimpressed. Rose is unimpressed. A standoff.",panel:"Rose taps the panel with a tiny hoof. Three new alarms start beeping. Rose looks very pleased.",sign:"Rose looks at the AUTHORIZED PERSONNEL ONLY sign. Then looks at you. Then looks back at the sign. Then coos.",crates:"Rose squeezes behind the crates and disappears for a moment. Then pops back out. She found nothing useful, but had a great time.",hatch:"Rose is not helpful with locks. She is very small and her hooves are not shaped for wheel-handles.",hdoor:"Rose headbutts the sealed hatch gently. It does not open. Rose seems satisfied anyway.",port:"Rose presses her tiny nose against the porthole. She coos at the stars for a very long time.",chair:"Rose tries to climb into the acceleration chair. She does not fit. She is a landhorse, not a launch-horse.",btn:"Rose stares at the blinking button. She stares for a LONG time. Then looks at you with enormous eyes. You both know what has to happen.",cp:"Rose trots across the control panel. Six new error messages appear. Three things start beeping. Rose is chaos incarnate."};
+        msg(rq[sp.id]||"Rose investigates "+sp.n+" with great curiosity and tiny hooves. Nothing useful happens, but she seems satisfied.");
+      }else{
+        msg("You try using the "+item+" on "+sp.n+". Nothing useful happens.");S.err();
+      }
+    }
+    return;
+  }
+  if(sp&&G.verb!=='walk'){
+    S.ui();
+    if(PV.includes(G.verb)||G.verb==='look'){
+      let wx=sp.wx||Math.min(Math.max(Math.round(sp.x+sp.w/2),15),305);
+      const minY=G.room==='pod'?170:112,maxY=G.room==='pod'?194:196;
+      let wy=Math.max(minY,Math.min(sp.wy||maxY,maxY));
+      if(G.room==='bay'&&wx>182&&wy<=128)wy=129;
+      if(G.room==='bay'&&wx<83&&wy<=129)wy=130;
+      if(G.room==='pod'&&wx>59&&wx<151&&wy<=168){wy=169;}
+      if(G.room==='pod'&&!G.seated&&wx>174&&wx<216&&wy>=120&&wy<=174){wy=G.pen.y<120?119:175;}
+      if(G.room==='bay'&&G.crateL<40&&wx>100&&wx<172&&wy>=118&&wy<=143){wy=G.pen.y<118?117:144;}
+      G.pendingAction={type:'interact',sp,v:G.verb};G.pen.tx=wx;G.pen.ty=wy;G.pen.walking=true;
+    }else doInt(sp,G.verb);
+  }else{
+    const minY=G.room==='pod'?170:112,maxY=G.room==='pod'?194:196;
+    let destX=Math.max(10,Math.min(gx,310));
+    let destY=Math.max(minY,Math.min(gy,maxY));
+    if(G.room==='bay'&&destX>182&&destY<=128)destY=129;
+    if(G.room==='bay'&&destX<83&&destY<=129)destY=130;
+    if(G.room==='pod'&&destX>59&&destX<151&&destY<=168){destY=169;}
+    if(G.room==='pod'&&!G.seated&&destX>174&&destX<216&&destY>=120&&destY<=174){destY=G.pen.y<120?119:175;}
+    if(G.room==='bay'&&G.crateL<40&&destX>100&&destX<172&&destY>=118&&destY<=143){destY=G.pen.y<118?117:144;}
+    G.pen.tx=destX;G.pen.ty=destY;
+    G.pen.walking=true;G.pendingAction=null;
+  }
+});
+document.querySelectorAll('.vb').forEach(b=>{
+  b.addEventListener('click',()=>{document.querySelectorAll('.vb').forEach(x=>x.classList.remove('on'));b.classList.add('on');G.verb=b.dataset.v;G.pendingUseItem=null;S.clk();});
+});
+requestAnimationFrame(ts=>{lastT=ts;loop(ts);});
+</script>
+</body>
+</html>
