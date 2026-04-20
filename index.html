@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="X-UA-Compatible" content="IE=edge">
 <title>Penelope & The Escape Pod — A Game by Finn & Dad</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#111;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;font-family:'Courier New',monospace}
-#g{background:#000;width:100%;max-width:1280px;margin:0 auto;border:2px solid #0000AA;box-sizing:border-box;}
-canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pixelated}
+#g{background:#000;width:640px;border:2px solid #0000AA}
+canvas{display:block;width:640px;height:400px;cursor:crosshair;image-rendering:pixelated}
 #msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:6px 10px;min-height:56px;color:#55FFFF;font:13px/1.6 'Courier New',monospace}
 #bot{background:#000044;display:flex;align-items:stretch;border-top:1px solid #5555FF;flex-wrap:wrap}
 .vb{background:transparent;color:#AAAAAA;border:none;border-right:1px solid #334;padding:7px 11px;font:11px 'Courier New',monospace;text-transform:uppercase;letter-spacing:1px;cursor:pointer}
@@ -35,18 +34,6 @@ canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pix
 </div>
 <script>
 const cv=document.getElementById('c'),ct=cv.getContext('2d');
-
-// Resize canvas pixel buffer to match display size
-function resizeCanvas(){
-  const w=cv.parentElement.clientWidth||640;
-  const scale=w<=640?1:w<=960?1.5:2;
-  const pw=Math.round(640*scale),ph=Math.round(400*scale);
-  if(cv.width!==pw){cv.width=pw;cv.height=ph;}
-  cv.style.height=cv.offsetWidth*(400/640)+"px";
-}
-window.addEventListener("resize",resizeCanvas);
-window.addEventListener("orientationchange",function(){setTimeout(resizeCanvas,100);});
-resizeCanvas();
 ct.imageSmoothingEnabled=false;
 const C={K:'#000',nv:'#0000AA',nv2:'#000066',bl:'#5555FF',cy:'#55FFFF',tl:'#00AAAA',ag:'#55FF55',gn:'#00AA00',mr:'#AA0000',rd:'#FF5555',dr:'#660000',ol:'#AA5500',yw:'#FFFF55',og:'#CC7700',am:'#DDAA00',lg:'#AAAAAA',mg:'#888888',dg:'#555555',wh:'#FFFFFF',sk:'#FFBB88',sl:'#446688',hw:'#667799',w2:'#334466',f1:'#1E2A38',f2:'#263444',K3:'#111122',K4:'#1A1A2E',p1:'#1A4A2A',p2:'#2A6A3A',p3:'#3A8A4A',sw:'#99BBCC',pk:'#FF55FF',pu:'#AA00AA',cr:'#FFEECC',mh:'#3A5570'};
 function f(c,x,y,w,h){if(w>0&&h>0){ct.fillStyle=c;ct.fillRect(x,y,w,h);}}
