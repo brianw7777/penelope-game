@@ -9,8 +9,8 @@
 body{background:#111;display:flex;justify-content:center;align-items:flex-start;height:100vh;overflow:hidden;padding:20px;font-family:'Courier New',monospace;box-sizing:border-box;}
 #g{background:#000;width:100%;max-width:1280px;margin:0 auto;border:2px solid #0000AA;box-sizing:border-box;}
 canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pixelated}
-#msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:8px 12px;min-height:96px;color:#55FFFF;font:15px/1.6 'Courier New',monospace}
-#bot{background:#000044;display:flex;align-items:stretch;border-top:1px solid #5555FF;flex-wrap:wrap}
+#msg{background:#000;border-top:1px solid #0000AA;border-bottom:1px solid #0000AA;padding:8px 12px;height:124px;overflow:hidden;color:#55FFFF;font-family:'Courier New',monospace;font-weight:bold;font-size:17px;line-height:1.6;cursor:text}
+#bot{background:#000044;display:flex;align-items:stretch;border-top:1px solid #5555FF;flex-wrap:wrap;user-select:none;-webkit-user-select:none;}
 .vb{background:transparent;color:#AAAAAA;border:none;border-right:1px solid #334;padding:24px 8px;font:21px 'Courier New',monospace;text-transform:uppercase;letter-spacing:0px;cursor:pointer}
 .vb.on{color:#FFFF55;background:#000088}.vb:hover:not(.on){color:#fff}
 #sep{width:1px;background:#5555FF}
@@ -21,7 +21,7 @@ canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pix
 <body>
 <div id="g">
 <canvas id="c" width="640" height="400"></canvas>
-<div id="msg">Penelope crept through the shuttle bay door. The AUTHORIZED PERSONNEL ONLY signs were definitely just suggestions.</div>
+<div style="position:relative;"><div id="msg"></div><div id="msgclick" onclick="if(G._msgPaging){msgContinue();}" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;cursor:pointer;z-index:10;"></div></div>
 <div id="bot">
 <button class="vb on" data-v="walk">Walk</button>
 <button class="vb" data-v="look">Look</button>
@@ -32,6 +32,7 @@ canvas{display:block;width:100%;height:auto;cursor:crosshair;image-rendering:pix
 <div id="inv" style="flex:1;min-width:0;"></div>
 </div>
 </div>
+<div id="pageoverlay" onclick="msgContinue()" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;cursor:pointer;"></div>
 <script>
 const cv=document.getElementById('c'),ct=cv.getContext('2d');
 
@@ -55,14 +56,68 @@ function resizeCanvas(){
   cv.style.height=ph+'px';
   g.style.width=pw+'px';
 }
-window.addEventListener("resize",resizeCanvas);
+window.addEventListener("resize",function(){resizeCanvas();if(typeof G!=="undefined"&&G._lastMsg)msg(G._lastMsg);});
 window.addEventListener("orientationchange",function(){setTimeout(resizeCanvas,100);});
 resizeCanvas();
 ct.imageSmoothingEnabled=false;
 const C={K:'#000',nv:'#0000AA',nv2:'#000066',bl:'#5555FF',cy:'#55FFFF',tl:'#00AAAA',ag:'#55FF55',gn:'#00AA00',mr:'#AA0000',rd:'#FF5555',dr:'#660000',ol:'#AA5500',yw:'#FFFF55',og:'#CC7700',am:'#DDAA00',lg:'#AAAAAA',mg:'#888888',dg:'#555555',wh:'#FFFFFF',sk:'#FFBB88',sl:'#446688',hw:'#667799',w2:'#334466',f1:'#1E2A38',f2:'#263444',K3:'#111122',K4:'#1A1A2E',p1:'#1A4A2A',p2:'#2A6A3A',p3:'#3A8A4A',sw:'#99BBCC',pk:'#FF55FF',pu:'#AA00AA',cr:'#FFEECC',mh:'#3A5570'};
 function f(c,x,y,w,h){if(w>0&&h>0){ct.fillStyle=c;ct.fillRect(x,y,w,h);}}
 function tx(s,x,y,col,sz){ct.fillStyle=col;ct.font='bold '+(sz||9)+'px monospace';ct.fillText(s,x,y);}
-function msg(s){document.getElementById('msg').textContent=s;}
+const MSG_BASE=17,MSG_MIN=9;
+function msgFits(el){
+  // Measure true content height by temporarily allowing scroll
+  el.style.overflowY='scroll';
+  const ok=el.scrollHeight<=el.offsetHeight;
+  el.style.overflowY='';
+  return ok;
+}
+function msg(s){
+  if(typeof G!=='undefined')G._lastMsg=s;
+  const el=document.getElementById('msg');
+  el.textContent=s;
+  // Start at base size — only scale if text overflows
+  el.style.fontSize=MSG_BASE+'px';
+  if(msgFits(el))return;
+  // Scale down one px at a time until it fits or hits minimum
+  for(let sz=MSG_BASE-1;sz>=MSG_MIN;sz--){
+    el.style.fontSize=sz+'px';
+    if(msgFits(el))return;
+  }
+  // Still overflows at minimum size — paginate
+  el.style.fontSize=MSG_MIN+'px';
+  G._msgFull=s;
+  G._msgPage=0;
+  msgPage();
+}
+function msgPage(){
+  const el=document.getElementById('msg');
+  const full=G._msgFull;
+  el.style.fontSize=MSG_MIN+'px';
+  el.textContent=full;
+  if(msgFits(el)){G._msgFull=null;return;}
+  const suffix=' ...(click to continue)';
+  let lo=0,hi=full.length;
+  while(lo<hi-1){
+    const mid=Math.floor((lo+hi)/2);
+    el.textContent=full.slice(0,mid)+suffix;
+    if(msgFits(el))lo=mid;else hi=mid;
+  }
+  el.textContent=full.slice(0,lo)+suffix;
+  G._msgRemain=full.slice(lo).trim();
+  G._msgPaging=true;
+  const mc=document.getElementById('msgclick');if(mc)mc.style.display='block';
+  const po=document.getElementById('pageoverlay');if(po)po.style.display='block';
+}
+function msgContinue(){
+  if(!G._msgPaging)return false;
+  G._msgFull=G._msgRemain;
+  G._msgPaging=false;
+  G._msgRemain='';
+  const mc=document.getElementById('msgclick');if(mc)mc.style.display='none';
+  const po=document.getElementById('pageoverlay');if(po)po.style.display='none';
+  msg(G._msgFull);
+  return true;
+}
 
 // Sound
 let AC;
@@ -88,13 +143,14 @@ const S={
 
 // State
 const G={
-  room:'bay',verb:'walk',inv:['lollipop','rose'],score:0,showIntro:true,
+  room:'bay',verb:'walk',inv:['lollipop','rose'],score:0,showIntro:true,lollipopBitten:false,
   flags:{keyTaken:false,hatchOpen:false,btnPressed:false,ejected:false,chairPts:false,fuelLine:false,consoleUsed:false,countdown:false},
   useCount:0,roseClicks:0,slimeTimer:0,rosePopup:false,invPopup:null,
   pen:{x:65,y:148,tx:65,ty:148,walking:false,frame:0,ft:0,dir:'right'},
   hov:null,pendingAction:null,pendingUseItem:null,
   crateL:0,crateR:0,crateMoving:false,
   waitClick:false,waitMsg:'',waitFn:null,invPopupLabel:'',
+  _msgFull:null,_msgPaging:false,_msgRemain:'',_lastMsg:'',
   roseX:65,roseY:155,// Rose follows Penelope with lag
   hatchCloseProg:0,hatchClosing:false,
   seated:false,
@@ -111,6 +167,7 @@ function updInv(){
   el.innerHTML=label+G.inv.map(i=>`<span class="ii${G.pendingUseItem===i?' ii-sel':''}" onclick="ci('${i}')">${i}</span>`).join('');
 }
 function ci(item){
+  if(G._msgPaging){msgContinue();return;}
   S.ui();
   // If an item is already selected with USE, clicking another inv item = use first on second
   if(G.pendingUseItem&&G.pendingUseItem!==item){
@@ -121,23 +178,37 @@ function ci(item){
   if(G.verb==='use'){
     G.pendingUseItem=item;updInv();
     if(item==='key')msg("Key selected — now click the hatch to unlock it!");
-    else if(item==='lollipop')msg("You wave the lollipop around. Nothing seems interested.");
+    else if(item==='lollipop'){
+      if(!G.lollipopBitten){
+        const tempts=[
+          "It's RIGHT THERE. Cherry. Perfect. Unbothered. You could just... no. Save it. Probably.",
+          "You hold it up. The light catches it perfectly. It smells incredible. You are very strong. So far.",
+          "Cherry lollipop, selected and ready. Your mouth: extremely interested. Your willpower: holding on by a thread.",
+          "It would be so easy. One lick. Nobody would even know. ROSE would know. She always knows."
+        ];
+        msg(tempts[Math.floor(Math.random()*tempts.length)]);
+      }else{
+        msg("You wave the bitten lollipop around. It has already been bitten. This is old news.");
+      }
+    }
     else if(item==='rose'){S.rose();G.pendingUseItem='rose';msg("Rose is selected and ready to help. She is probably not going to help. Click something to try.");}
     return;
   }
   // All non-use verbs behave like look — show popup/description
   G.pendingUseItem=null;updInv();
   if(item==='lollipop'){
-    G.invPopup='lollipop';msg("Cherry lollipop. Very red. Slightly pocket-fuzzy. Still delicious. (Click to close)");
+    G.invPopup=G.lollipopBitten?'lollipop_bitten':'lollipop';
+    msg(G.lollipopBitten?"A lollipop with one large bite taken out of it. Still delicious. Slightly less symmetrical. (Click to close)":"Cherry lollipop. Very red. Slightly pocket-fuzzy. Still delicious. (Click to close)");
   }else if(item==='rose'){
     G.roseClicks++;
     if(G.roseClicks>=10){G.roseClicks=0;G.slimeTimer=10;S.stm();msg("Rose makes a TERRIBLE face and squirts sea slime at you. 'GIVE ME A MOMENT.' You are now slimy.");}
     else{S.rose();G.invPopup='rose';msg("Rose the tiny landhorse coos softly. She is your dear pet. She has tiny hooves and enormous eyes. Everything will be okay. (Click to close)");}
   }else if(item==='key'){
-    G.invPopup='key';msg("The hexagonal hatch key. Tagged 'MAINT. HATCH — BAY C-7'. (Click to close)");
+    G.invPopup='key';msg("A small hexagonal key, slightly warm to the touch. Tagged 'MAINT. HATCH — ESC. POD C-7'. Someone left this lying around on purpose, or not on purpose at all. (Click to close)");
   }
 }
 updInv();
+msg("Penelope and Rose crept through the shuttle bay door. The AUTHORIZED PERSONNEL ONLY signs were definitely just suggestions.");
 
 // Hotspots
 const CONSOLE_QUIPS=['You flip a switch. A distant alarm bleats once. You back away quickly.','More switches. More beeping. A red light flashes. You flip it back. Crisis probably averted.','Screen shows: PLEASE RELOAD PROTOCOL 7. You have absolutely no idea what that means.','The panel goes BONG. You pretend that was intentional.',"A button says DO NOT PRESS. You press it. Nothing happens. Deeply disappointing.",'The screen flickers to a tropical fish screensaver. You watch for a calming moment.','You find a slider and push it to maximum. Something distant whirrs ominously.','The panel plays a little jingle. You did not know panels could do that.',"A stern voice says: UNAUTHORIZED ACCESS IN BAY C-7. That's definitely you."];
@@ -165,7 +236,7 @@ bay:[
    push:"It doesn't move. It's a shuttle."},
   {id:'key',n:'the hatch key',x:54,y:98,w:23,h:16,wx:46,wy:148,
    vis:()=>!G.flags.keyTaken,
-   look:"A hexagonal maintenance hatch key. Tagged 'MAINT. HATCH — BAY C-7'.",
+   look:"A small hexagonal key tagged 'MAINT. HATCH — ESC. POD C-7'. Slightly warm. Smells faintly of engine oil.",
    take:()=>{G.flags.keyTaken=true;G.inv.push('key');updInv();S.pick();msg("You pocket the hatch key! Finders keepers in a restricted area!");return null;},
    use:"You should TAKE it.",open:"TAKE it.",push:"TAKE it."},
   {id:'panel',n:'the control panel',x:10,y:54,w:74,h:56,wx:46,wy:148,
@@ -194,7 +265,7 @@ pod:[
    push:"Ice cold glass against your palm. 'Mom...' you whisper.",
    use:"Space refuses to blink first.",take:"Part of the hull."},
   {id:'chair',n:'the acceleration chair',x:147,y:72,w:100,h:100,wx:197,wy:172,
-   look:"A very tall acceleration chair — backing must be six feet at least. Complex harness. The headrest label says: 'BRACE FOR LAUNCH' in urgent yellow letters.",
+   look:"A very big acceleration chair with a complex harness. The headrest label says: 'BRACE FOR LAUNCH' in urgent yellow letters.",
    use:()=>doChair(),open:()=>doChair(),push:()=>doChair(),take:"Bolted to the pod floor."},
   {id:'btn',n:'the launch button',x:90,y:140,w:20,h:16,wx:112,wy:176,
    look:"A big red button labelled EMERGENCY LAUNCH. It pulses urgently. If you press it, surely an adult will come sort things out... right?",
@@ -209,9 +280,9 @@ pod:[
 function doCrates(){
   if(G.crateL>=45){S.err();return"The crates are already tipped aside.";}
   G.crateMoving=true;S.ui();
-  msg("You grab the crate handle and HEAVE. The whole stack SPLITS APART in two directions with a spectacular CRASH — completely empty inside! [click to continue]");
+  msg("You give the handle a heroic tug. The stack lurches sideways, considers its options, then CRASHES in both directions. Penelope freezes. Looks at the door. Nobody comes. Probably fine. (click to continue)");
   G.waitClick=true;
-  G.waitMsg="A maintenance hatch! With a wheel-handle! This is the PERFECT hiding spot! If only it weren't locked...";
+  G.waitMsg="A maintenance hatch is revealed! With a wheel-handle! This is the PERFECT hiding spot! If only it weren't locked...";
   return null;
 }
 function doHatch(useKey){
@@ -227,7 +298,7 @@ function doHatch(useKey){
   }
   // Locked — no key
   if(!G.inv.includes('key')){
-    S.err();return"Locked. You need the hatch key. Wait, what's that shiny gold thingie on the console? (Hint: Select TAKE and click the gold key)";
+    S.err();return"Locked. You need the hatch key. Wait, what's that shiny gold thingy on the console? (Hint: Select TAKE and click the gold key)";
   }
   // Locked — has key but not using it from inventory
   if(!useKey){
@@ -401,20 +472,34 @@ function drawBay(){
   f(C.dg,11,126,9,3);f(C.mg,11,126,9,2);
   f(C.dg,72,126,9,3);f(C.mg,72,126,9,2);
 
-  // 3. Shuttle base plate + tall struts
-  // Vertical struts — two-tone: outer dark, inner highlight strip
-  f(C.dg,195,100,10,30);f(C.mg,196,100,2,28);
-  f(C.dg,210,100,10,30);f(C.mg,211,100,2,28);
-  f(C.dg,291,100,10,30);f(C.mg,292,100,2,28);
-  f(C.dg,306,100,10,30);f(C.mg,307,100,2,28);
-  // Base plate (wider than hull, sits below fuselage)
+  // 3. Shuttle base plate drawn first
   f(C.dg,179,126,143,10);
   ct.globalAlpha=0.4;f(C.K,179,126,143,10);ct.globalAlpha=1;
   f(C.dg,181,127,139,7);
   f(C.mg,182,127,137,2);
-  // Skid runners on plate
-  f(C.K3,188,130,48,5);f(C.mg,189,130,46,2);
-  f(C.K3,276,130,48,5);f(C.mg,277,130,46,2);
+  // Landing struts — 11px tall (1/2 of original 22px)
+  // Front pair — 13px tall struts
+  f(C.dg,227,126,6,13);f(C.mg,228,126,4,12);
+  f(C.dg,243,126,6,13);f(C.mg,244,126,4,12);
+  // Rear pair — 13px tall struts
+  f(C.dg,293,126,6,13);f(C.mg,294,126,4,12);
+  f(C.dg,309,126,6,13);f(C.mg,310,126,4,12);
+  // Front ski body
+  f(C.K3,222,138,32,4);f(C.mg,223,138,30,2);
+  // Front ski upturn
+  f(C.K3,220,136,4,4);f(C.mg,220,136,3,2);
+  f(C.K3,218,134,4,3);f(C.mg,218,134,3,1);
+  f(C.K3,216,133,4,2);
+  // Front ski tail cap
+  f(C.dg,252,139,3,3);
+  // Rear ski body
+  f(C.K3,288,138,32,4);f(C.mg,289,138,30,2);
+  // Rear ski upturn
+  f(C.K3,286,136,4,4);f(C.mg,286,136,3,2);
+  f(C.K3,284,134,4,3);f(C.mg,284,134,3,1);
+  f(C.K3,282,133,4,2);
+  // Rear ski tail cap
+  f(C.dg,318,139,3,3);
   // 4. Main fuselage (draws on top of struts + plate)
   f(C.sl,183,90,135,38);f(C.sw,183,90,135,3);f(C.hw,183,126,135,3);
   // Panel lines
@@ -428,11 +513,19 @@ function drawBay(){
   f(C.sl,228,94,2,32);f(C.sl,250,94,2,32);
   f(C.K4,230,96,20,28);f(C.dg,237,103,4,4);f(C.mg,238,104,2,2);
   tx('ARGO-7',262,114,C.K,8);
+  tx('SHUTTLE',260,122,C.K,8);
+  tx('SHUTTLE',260,122,C.K,8);
   // Engine pods (right)
   f(C.dg,300,93,18,14);f(C.mg,300,93,18,3);f(C.K3,302,96,14,8);
   f(C.dg,300,110,18,14);f(C.mg,300,110,18,3);f(C.K3,302,113,14,8);
   f(C.K,316,97,4,6);f(C.K,316,114,4,6);
   if(G.flags.fuelLine){f(b1?C.og:C.rd,315,98,5,4);f(b2?C.yw:C.og,315,115,5,4);}
+  // Tail fin — rises above fuselage at rear right
+  f(C.sl,309,70,8,22);f(C.sw,309,70,8,3);f(C.mh,310,72,6,18);
+  f(C.dg,309,70,2,22);// fin leading edge shadow
+  // Small wing stubs on engine pods
+  f(C.mh,316,96,12,4);f(C.sl,316,96,12,1);// upper wing
+  f(C.mh,316,116,12,4);f(C.sl,316,116,12,1);// lower wing
   // Nav lights
   f(b3?C.rd:C.dr,183,90,3,3);f(b1?C.gn:C.K3,183,123,3,3);
   // Landing gear legs (short, disappear into floor)
@@ -449,7 +542,16 @@ function drawBay(){
   if(G.crateL>=38){
     const ha=Math.min(1,(G.crateL-38)/8);ct.globalAlpha=ha;
     f(C.mg,106,121,60,18);f(C.dg,106,121,60,1);f(C.dg,106,138,60,1);
-    f(C.lg,109,123,54,14);f(C.mg,126,124,22,4);f(C.lg,132,121,10,10);
+    f(C.lg,109,123,54,14);
+    // Wheel-handle — perspective oval (wide, shallow like a sideways egg)
+    ct.beginPath();ct.ellipse(136,130,9,4,0,0,Math.PI*2);ct.strokeStyle=C.mg;ct.lineWidth=1.5;ct.stroke();
+    ct.beginPath();ct.ellipse(136,130,9,4,0,0,Math.PI*2);ct.strokeStyle=C.lg;ct.lineWidth=0.5;ct.stroke();
+    // Spokes along oval axes
+    ct.strokeStyle=C.mg;ct.lineWidth=1;
+    ct.beginPath();ct.moveTo(127,130);ct.lineTo(145,130);ct.stroke();// horizontal spoke
+    ct.beginPath();ct.moveTo(136,126);ct.lineTo(136,134);ct.stroke();// vertical spoke (short, perspective)
+    // Centre hub
+    ct.beginPath();ct.ellipse(136,130,2,1,0,0,Math.PI*2);ct.fillStyle=C.dg;ct.fill();
     f(G.flags.hatchOpen?C.ag:C.rd,157,123,6,5);tx('MAINT.',109,136,C.cy,8);
     ct.globalAlpha=1;
   }
@@ -459,7 +561,7 @@ function drawBay(){
     f(C.dg,106,121,Math.round(30*p),18);f(C.dg,166-Math.round(30*p),121,Math.round(30*p),18);
   }
   // Status bar
-  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('SHUTTLE BAY — COLONY SHIP ARGO',55,8,C.wh,11);tx('v0.20',274,8,C.lg,11);
+  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('SHUTTLE BAY — COLONY SHIP ARGO',55,8,C.wh,11);tx('v0.21',274,8,C.lg,11);
 }
 
 // Pod scene
@@ -539,7 +641,7 @@ function drawPod(){
     f(C.sl,262,51,44,4);f(C.sl,262,51,4,44);f(C.sl,302,51,4,44);
     f(C.am,271,53,12,8);tx('BAY',263,87,C.cy,8);
   }
-  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('ESCAPE POD Mk.7B',90,8,C.wh,11);tx('v0.20',274,8,C.lg,11);
+  f(C.nv,0,0,320,11);tx('SCORE:'+G.score,3,8,C.yw,11);tx('ESCAPE POD Mk.7B',90,8,C.wh,11);tx('v0.21',274,8,C.lg,11);
 }
 
 // Cutscene scenes
@@ -1027,17 +1129,22 @@ function drawPen(){
     ct.fillStyle='#11AA33';ct.fillRect(Math.round(sw*.32),Math.round(sh*.5),Math.round(sw*.08),Math.round(sh*.06));
     ct.globalAlpha=1;
   }
-  // Arms longer + swing
+  // Arms — subtle swing from mid-shirt, not shoulder
   const af=p.walking?p.frame:0;
-  const afwd=af?Math.round(sh*.05):0,abk=af?-Math.round(sh*.05):0;
+  const afwd=af?Math.round(sh*.03):0,abk=af?-Math.round(sh*.03):0;
+  const armTop=Math.round(sh*.38);// start mid-shirt not at shoulder
+  const armLen=Math.round(sh*.18);
+  const handLen=Math.round(sh*.09);
   ct.fillStyle=C.tl;
-  ct.fillRect(-2,Math.round(sh*.32)+abk,2,Math.round(sh*.2));
-  ct.fillRect(sw,Math.round(sh*.32)+afwd,2,Math.round(sh*.2));
+  ct.fillRect(-2,armTop+abk,2,armLen);
+  ct.fillRect(sw,armTop+afwd,2,armLen);
   ct.fillStyle=C.sk;
-  ct.fillRect(-2,Math.round(sh*.44)+abk,2,Math.round(sh*.1));
-  ct.fillRect(sw,Math.round(sh*.44)+afwd,2,Math.round(sh*.1));
+  ct.fillRect(-2,armTop+armLen+abk,2,handLen);
+  ct.fillRect(sw,armTop+armLen+afwd,2,handLen);
+  // Waist fill — covers any gap between shirt and pants due to rounding
+  ct.fillStyle=C.nv;ct.fillRect(0,Math.round(sh*.56),sw,2);
   // Pants/legs animated
-  ct.fillStyle=C.nv;ct.fillRect(0,Math.round(sh*.58),sw,Math.round(sh*.28));
+  ct.fillStyle=C.nv;ct.fillRect(0,Math.round(sh*.57),sw,Math.round(sh*.29));
   const lo=(p.walking&&p.frame)?Math.round(sh*.06):0;const lw=Math.round(sw*.44);
   ct.fillStyle=C.nv2;ct.fillRect(0,Math.round(sh*.74),lw,Math.round(sh*.16));ct.fillRect(sw/2,Math.round(sh*.74)-lo,lw,Math.round(sh*.16));
   // Shoes
@@ -1107,20 +1214,27 @@ function drawInvPopup(item){
     f(C.mg,bx+14,by+24,bw-28,bh-52);
     f(C.lg,bx+20,by+30,20,20);f(C.lg,bx+50,by+40,15,15);f(C.lg,bx+35,by+55,18,12);
     tx('(clothing item)',bx+10,by+bh-12,C.cy,5);
-  }else if(item==='lollipop'){
-    tx('LOLLIPOP',bx+22,by+11,C.yw,8);
-    // Stick — thin cream line, game coords
+  }else if(item==='lollipop'||item==='lollipop_bitten'){
+    const bitten=item==='lollipop_bitten';
+    tx(bitten?'LOLLIPOP (BITTEN)':'LOLLIPOP',bx+10,by+11,C.yw,7);
+    // Stick
     f(C.cr,bx+58,by+57,2,28);
-    // Candy ball — all game coords (setTransform handles 2x)
+    // Full candy circle
     ct.beginPath();ct.arc(bx+59,by+47,16,0,Math.PI*2);ct.fillStyle=C.rd;ct.fill();
     ct.beginPath();ct.arc(bx+59,by+47,16,0,Math.PI*2);ct.strokeStyle=C.mr;ct.lineWidth=1;ct.stroke();
-    // Pink highlight patch (top left)
-    ct.beginPath();ct.arc(bx+52,by+41,7,-0.8,0.8);ct.strokeStyle='rgba(255,160,180,0.6)';ct.lineWidth=5;ct.stroke();
-    // White shine dot
+    if(bitten){
+      // Crescent bite on right side — draw bg-coloured circle overlapping edge
+      ct.beginPath();ct.arc(bx+72,by+47,10,0,Math.PI*2);ct.fillStyle=C.nv2;ct.fill();
+      // Redraw the outer stroke arc so candy edge looks clean
+      ct.beginPath();ct.arc(bx+59,by+47,16,0,Math.PI*2);ct.strokeStyle=C.mr;ct.lineWidth=1;ct.stroke();
+      // Small white crumbs along bite edge
+      [[bx+63,by+38],[bx+66,by+41],[bx+64,by+55],[bx+67,by+52]].forEach(([fx,fy])=>{f(C.wh,fx,fy,2,1);});
+    }
+    // Shine dot
     f(C.wh,bx+52,by+40,4,3);
-    // Pocket fuzz dots (grey specks on candy)
+    // Fuzz dots
     [[bx+56,by+52],[bx+63,by+44],[bx+67,by+53],[bx+54,by+46],[bx+70,by+48]].forEach(([fx,fy])=>{f(C.mg,fx,fy,2,2);});
-    tx('Cherry lollipop',bx+16,by+bh-12,C.cy,5);
+    tx(bitten?'Cherry (one bite taken)':'Cherry lollipop',bx+10,by+bh-12,C.cy,5);
     tx('Slightly pocket-fuzzy',bx+12,by+bh-5,C.mg,5);
   }else if(item==='key'){
     tx('HATCH KEY',bx+22,by+11,C.yw,8);
@@ -1144,8 +1258,8 @@ function drawInvPopup(item){
     f(C.K3,kx+70,ky+14,6,6);
     // Tag hanging off ring
     f(C.cr,kx+8,ky+21,12,6);f(C.K3,kx+9,ky+22,10,4);
-    tx('BAY C-7',kx+9,ky+25,C.cy,4);
-    tx('MAINT. HATCH — BAY C-7',bx+6,by+bh-12,C.cy,5);
+    tx('ESC.POD C-7',kx+5,ky+25,C.cy,4);
+    tx('MAINT. HATCH — ESC. POD C-7',bx+4,by+bh-12,C.cy,5);
     tx('Property of Colony Ship ARGO',bx+4,by+bh-5,C.mg,5);
   }
   tx('Click to close',bx+28,by+bh-20,C.dg,5);
@@ -1259,7 +1373,7 @@ function loop(ts){
         else if(a.type==='interact'){doInt(a.sp,a.v);S.ui();}}
     }else{
       p.walking=true;const r=Math.min(1,55*dt/d);p.x+=dx*r;p.y+=dy*r;
-      if(G.room==='bay'&&p.x>182&&p.y<=128){p.y=129;if(p.ty<129)p.ty=129;}
+      if(G.room==='bay'&&p.x>182&&p.y<=140){p.y=141;if(p.ty<141)p.ty=141;}
       if(G.room==='bay'&&p.x<83&&p.y<=129){p.y=130;if(p.ty<130)p.ty=130;}
       if(G.room==='pod'&&p.x>59&&p.x<151&&p.y<=168){if(p.x-59<151-p.x){p.x=60;if(p.tx>60)p.tx=60;}else{p.x=151;if(p.tx<151)p.tx=151;}}
       if(G.room==='pod'&&p.x>=60&&p.x<=150&&p.y>89&&p.y<=168){p.y=169;if(p.ty<169)p.ty=169;}
@@ -1298,10 +1412,16 @@ cv.addEventListener('mousemove',e=>{
   G.hov=findSpot(Math.floor((e.clientX-r.left)*320/r.width),Math.floor((e.clientY-r.top)*200/r.height));
   cv.style.cursor=G.hov?'pointer':'crosshair';
 });
-cv.addEventListener('click',e=>{
+// Allow clicking anywhere to advance paginated text
+// Single document-wide click handler — catches canvas, text box, menu bar
+document.addEventListener('click',e=>{
   if(G.showIntro){G.showIntro=false;return;}
+  if(G._msgPaging){msgContinue();return;}
+}, true);// useCapture=true catches clicks before any child stopPropagation
+cv.addEventListener('click',e=>{
+  if(G.showIntro||G._msgPaging)return;
   if(G.hatchClosing)return;
-  if(G.invPopup){const was=G.invPopup;G.invPopup=null;G.rosePopup=false;msg(was==='rose'?'Rose coos and trots back to your side.':was==='lollipop'?"Mmm. Maybe later.":"You pocket the key again.");return;}
+  if(G.invPopup){const was=G.invPopup;G.invPopup=null;G.rosePopup=false;msg(was==='rose'?'Rose coos and trots back to your side.':was==='lollipop'||was==='lollipop_bitten'?"Mmm. Maybe later.":"You pocket the key again.");return;}
   if(G.waitClick){G.waitClick=false;const fn=G.waitFn;G.waitFn=null;if(G.waitMsg)msg(G.waitMsg);if(fn)fn();return;}
   if(!['bay','pod'].includes(G.room))return;
   const r=cv.getBoundingClientRect();
@@ -1321,6 +1441,29 @@ cv.addEventListener('click',e=>{
         "You're quite thoroughly buckled in. Unbuckle first.",
       ];
       msg(seatedQuips[Math.floor(Math.random()*seatedQuips.length)]);
+      return;
+    }
+  }
+  // Using lollipop on Penelope — click on her sprite (no hotspot needed)
+  if(G.pendingUseItem==='lollipop'&&!sp){
+    const p=G.pen;
+    const sc=G.room==='pod'?1.6:.52+Math.max(0,Math.min(1,(p.y-112)/70))*.48;
+    const sh=Math.round(28*sc),sw=Math.round(14*sc);
+    const px=Math.round(p.x-sw/2),py=Math.round(p.y-sh);
+    if(gx>=px-4&&gx<=px+sw+4&&gy>=py&&gy<=py+sh){
+      G.pendingUseItem=null;updInv();
+      if(!G.lollipopBitten){
+        G.lollipopBitten=true;
+        msg("You take a big bite. CRUNCH. It's cherry. Obviously. You've been carrying it for an hour and resisted the whole time. Regret: zero. It's delicious.");
+      }else{
+        const quips=[
+          "You already bit it. It's now a Bitten Lollipop. A collector's item.",
+          "No. You need this. Probably. For something. Put it away.",
+          "One bite was correct. Two bites is a decision. Not yet.",
+          "Rose is watching you very carefully right now."
+        ];
+        msg(quips[Math.floor(Math.random()*quips.length)]);
+      }
       return;
     }
   }
@@ -1347,7 +1490,7 @@ cv.addEventListener('click',e=>{
       let wx=sp.wx||Math.min(Math.max(Math.round(sp.x+sp.w/2),15),305);
       const minY=G.room==='pod'?170:112,maxY=G.room==='pod'?194:196;
       let wy=Math.max(minY,Math.min(sp.wy||maxY,maxY));
-      if(G.room==='bay'&&wx>182&&wy<=128)wy=129;
+      if(G.room==='bay'&&wx>182&&wy<=140)wy=141;
       if(G.room==='bay'&&wx<83&&wy<=129)wy=130;
       if(G.room==='pod'&&wx>59&&wx<151&&wy<=168){wy=169;}
       if(G.room==='pod'&&!G.seated&&wx>174&&wx<216&&wy>=120&&wy<=174){wy=G.pen.y<120?119:175;}
@@ -1355,10 +1498,36 @@ cv.addEventListener('click',e=>{
       G.pendingAction={type:'interact',sp,v:G.verb};G.pen.tx=wx;G.pen.ty=wy;G.pen.walking=true;
     }else doInt(sp,G.verb);
   }else{
+    // LOOK on empty space — show description AND still walk
+    if(G.verb==='look'){
+      const p=G.pen;
+      const sc=G.room==='pod'?1.6:.52+Math.max(0,Math.min(1,(p.y-112)/70))*.48;
+      const sh=Math.round(28*sc),sw=Math.round(14*sc);
+      const px=Math.round(p.x-sw/2),py=Math.round(p.y-sh);
+      const rx=Math.round(G.roseX),ry=Math.round(G.roseY);
+      if(gx>=rx-6&&gx<=rx+8&&gy>=ry-8&&gy<=ry+4){
+        S.rose();msg("Rose. Your tiny landhorse. She is looking at you with her enormous eyes. She is right here. She has always been right here. You are her whole world and she is yours.");
+      }else if(gx>=px-4&&gx<=px+sw+4&&gy>=py&&gy<=py+sh){
+        const penLooks=[
+          "Penelope Vasquez-Park. Age 12. Currently in a situation.",
+          "You look at yourself. You look fine. Considering.",
+          "Hair: present. Shoes: on. Situation: developing.",
+          "Still you. Slightly more concerned than five minutes ago."
+        ];
+        msg(penLooks[Math.floor(Math.random()*penLooks.length)]);
+      }else{
+        const areaLook={
+          bay:"The shuttle bay of colony ship ARGO. Smells of engine oil and recycled air. The kind of place that has signs saying DO NOT ENTER, which Penelope has definitely read.",
+          pod:"A very small escape pod. Everything is either bolted down, blinking, or both. It smells faintly of stale emergency."
+        };
+        msg(areaLook[G.room]||"You look around. It's a lot to take in.");
+      }
+      // Fall through to walk — no return
+    }
     const minY=G.room==='pod'?170:112,maxY=G.room==='pod'?194:196;
     let destX=Math.max(10,Math.min(gx,310));
     let destY=Math.max(minY,Math.min(gy,maxY));
-    if(G.room==='bay'&&destX>182&&destY<=128)destY=129;
+    if(G.room==='bay'&&destX>182&&destY<=140)destY=141;
     if(G.room==='bay'&&destX<83&&destY<=129)destY=130;
     if(G.room==='pod'&&destX>59&&destX<151&&destY<=168){destY=169;}
     if(G.room==='pod'&&!G.seated&&destX>174&&destX<216&&destY>=120&&destY<=174){destY=G.pen.y<120?119:175;}
@@ -1368,7 +1537,7 @@ cv.addEventListener('click',e=>{
   }
 });
 document.querySelectorAll('.vb').forEach(b=>{
-  b.addEventListener('click',()=>{document.querySelectorAll('.vb').forEach(x=>x.classList.remove('on'));b.classList.add('on');G.verb=b.dataset.v;G.pendingUseItem=null;updInv();S.clk();});
+  b.addEventListener('click',e=>{if(G._msgPaging){msgContinue();e.stopPropagation();return;}document.querySelectorAll('.vb').forEach(x=>x.classList.remove('on'));b.classList.add('on');G.verb=b.dataset.v;G.pendingUseItem=null;updInv();S.clk();});
 });
 requestAnimationFrame(ts=>{lastT=ts;loop(ts);});
 </script>
